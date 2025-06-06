@@ -43,7 +43,7 @@ function App() {
             
             {/* Instructor Routes */}
             <Route path="/instructor" element={<InstructorLayout />}>
-              <Route index element={<Navigate to="/instructor/dashboard" replace />} />
+              <Route index element={<Navigate to="/instructor/dashboard\" replace />} />
               <Route path="dashboard" element={<InstructorDashboard />} />
               <Route path="setup" element={<GameSetup />} />
               <Route path="control" element={<MarketControl />} />
@@ -53,7 +53,7 @@ function App() {
 
             {/* Utility Routes */}
             <Route path="/utility/:utilityId" element={<UtilityLayout />}>
-              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route index element={<Navigate to="dashboard\" replace />} />
               <Route path="dashboard" element={<UtilityDashboard />} />
               <Route path="portfolio" element={<Portfolio />} />
               <Route path="investment" element={<Investment />} />
@@ -62,7 +62,7 @@ function App() {
             </Route>
 
             {/* Catch all */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/\" replace />} />
           </Routes>
         </div>
         
