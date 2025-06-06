@@ -9,11 +9,13 @@ const RoleSelector: React.FC = () => {
   const [selectedUtility, setSelectedUtility] = useState('utility_1');
 
   const handleInstructorLogin = () => {
+    console.log('Instructor login clicked');
     setRole('instructor');
     navigate('/instructor');
   };
 
   const handleUtilityLogin = () => {
+    console.log('Utility login clicked:', selectedUtility);
     setRole('utility');
     setUtilityId(selectedUtility);
     navigate(`/utility/${selectedUtility}`);
