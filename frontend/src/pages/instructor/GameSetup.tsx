@@ -51,7 +51,7 @@ interface GameScenario {
 }
 
 const GameSetup: React.FC = () => {
-  const { setCurrentSession } = useGameStore();
+  const { setCurrentSession, currentSession } = useGameStore();
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState<'create' | 'scenarios' | 'manage' | 'portfolios'>('create');
@@ -1205,5 +1205,3 @@ const GameSetup: React.FC = () => {
 };
 
 export default GameSetup;
-
-export default GameSetup
