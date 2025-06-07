@@ -9,9 +9,7 @@ import {
   ExclamationTriangleIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
-import { 
-  TrendingUpIcon
-} from '@heroicons/react/24/solid';
+import { TrendingUpIcon } from '@heroicons/react/24/outline';
 import { 
   LineChart, 
   Line, 
