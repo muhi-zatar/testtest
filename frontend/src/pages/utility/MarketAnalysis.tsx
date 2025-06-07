@@ -9,10 +9,7 @@ import {
   FireIcon,
   CloudIcon
 } from '@heroicons/react/24/outline';
-import { 
-  TrendingUpIcon,
-  TrendingDownIcon
-} from '@heroicons/react/24/solid';
+import { TrendingUpIcon, TrendingDownIcon } from '@heroicons/react/24/outline';
 import { 
   LineChart, 
   Line, 
