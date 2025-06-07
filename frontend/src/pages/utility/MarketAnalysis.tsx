@@ -9,7 +9,7 @@ import {
   FireIcon,
   CloudIcon
 } from '@heroicons/react/24/outline';
-import { TrendingUpIcon, TrendingDownIcon } from '@heroicons/react/24/outline';
+import { ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
 import { 
   LineChart, 
   Line, 
@@ -127,7 +127,7 @@ const MarketAnalysis: React.FC = () => {
     const priceChange = ((latest.avgPrice - previous.avgPrice) / previous.avgPrice) * 100;
     insights.push({
       type: priceChange > 0 ? 'warning' : 'positive',
-      icon: priceChange > 0 ? TrendingUpIcon : TrendingDownIcon,
+      icon: priceChange > 0 ? ArrowTrendingUpIcon : ArrowTrendingDownIcon,
       title: `Electricity Prices ${priceChange > 0 ? 'Rising' : 'Falling'}`,
       description: `Average prices ${priceChange > 0 ? 'increased' : 'decreased'} by ${Math.abs(priceChange).toFixed(1)}% year-over-year`,
       value: `${priceChange > 0 ? '+' : ''}${priceChange.toFixed(1)}%`

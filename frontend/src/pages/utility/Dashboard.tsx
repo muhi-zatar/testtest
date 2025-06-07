@@ -9,7 +9,7 @@ import {
   ExclamationTriangleIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
-import { TrendingUpIcon } from '@heroicons/react/24/outline';
+import { ArrowTrendingUpIcon } from '@heroicons/react/24/outline';
 import { 
   LineChart, 
   Line, 
@@ -204,7 +204,7 @@ const UtilityDashboard: React.FC = () => {
               </p>
             </div>
             <div className={`p-3 rounded-lg ${debtToEquity > 2 ? 'bg-red-600' : debtToEquity > 1 ? 'bg-yellow-600' : 'bg-green-600'}`}>
-              <TrendingUpIcon className="w-6 h-6 text-white" />
+              <ArrowTrendingUpIcon className="w-6 h-6 text-white" />
             </div>
           </div>
         </div>
