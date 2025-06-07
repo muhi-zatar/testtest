@@ -1,4 +1,3 @@
-from fastapi import Query
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, String, Float, Integer, Boolean, DateTime, Text, ForeignKey, Enum as SQLEnum
@@ -10,7 +9,6 @@ import json
 from datetime import datetime
 import uuid
 import enum
-from pydantic import Field
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./electricity_market_yearly.db"
@@ -300,31 +298,6 @@ class PlantTemplateResponse(BaseModel):
     variable_om_per_mwh: float
     co2_emissions_tons_per_mwh: float
 
-# New Pydantic models for portfolio assignment
-class UtilityFinancialUpdate(BaseModel):
-    budget: float = Field(ge=0, description="Available budget in dollars")
-    debt: float = Field(ge=0, description="Current debt in dollars")
-    equity: float = Field(ge=0, description="Current equity in dollars")
-
-class PlantAssignment(BaseModel):
-    plant_name: str
-    plant_type: str
-    capacity_mw: float
-    construction_start_year: int
-    commissioning_year: int
-    retirement_year: int
-
-class PortfolioTemplate(BaseModel):
-    name: str
-    description: str
-    initial_budget: float
-    initial_debt: float
-    initial_equity: float
-    plants: List[PlantAssignment]
-
-class BulkPortfolioAssignment(BaseModel):
-    utility_assignments: Dict[str, PortfolioTemplate]
-
 # Dependency
 def get_db():
     db = SessionLocal()
@@ -535,207 +508,76 @@ def get_user_financials(user_id: str, game_session_id: str, db: Session = Depend
         "total_capacity_mw": sum(plant.capacity_mw for plant in plants)
     }
 
-# New endpoints for portfolio and financial management
-@app.put("/users/{user_id}/financials")
-def update_user_financials(
-    user_id: str, 
-    financial_update: UtilityFinancialUpdate, 
-    db: Session = Depends(get_db)
-):
-    """Update utility financial position (instructor only)"""
-    user = db.query(DBUser).filter(DBUser.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+# Game Session Management
+@app.post("/game-sessions", response_model=GameSessionResponse)
+def create_game_session(session: GameSessionCreate, db: Session = Depends(get_db)):
+    # Create default demand profile inline
+    demand_profile_data = {
+        "off_peak_hours": 5000,
+        "shoulder_hours": 2500,
+        "peak_hours": 1260,
+        "off_peak_demand": 1200,
+        "shoulder_demand": 1800,
+        "peak_demand": 2400,
+        "demand_growth_rate": 0.02
+    }
     
-    if user.user_type != UserTypeEnum.utility:
-        raise HTTPException(status_code=400, detail="Can only update utility finances")
+    db_session = DBGameSession(
+        id=str(uuid.uuid4()),
+        name=session.name,
+        operator_id=session.operator_id,
+        start_year=session.start_year,
+        end_year=session.end_year,
+        current_year=session.start_year,
+        carbon_price_per_ton=session.carbon_price_per_ton,
+        demand_profile=json.dumps(demand_profile_data),
+        fuel_prices=json.dumps(DEFAULT_FUEL_PRICES)
+    )
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
+    return db_session
+
+@app.get("/game-sessions/{session_id}", response_model=GameSessionResponse)
+def get_game_session(session_id: str, db: Session = Depends(get_db)):
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    return session
+
+@app.put("/game-sessions/{session_id}/state")
+def update_game_state(session_id: str, new_state: str, db: Session = Depends(get_db)):
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
     
-    # Update financial position
-    user.budget = financial_update.budget
-    user.debt = financial_update.debt
-    user.equity = financial_update.equity
+    try:
+        session.state = GameStateEnum(new_state)
+        db.commit()
+        return {"message": "Game state updated", "new_state": new_state}
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid game state: {new_state}")
+
+@app.put("/game-sessions/{session_id}/advance-year")
+def advance_year(session_id: str, db: Session = Depends(get_db)):
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    if session.current_year >= session.end_year:
+        session.state = GameStateEnum.game_complete
+    else:
+        session.current_year += 1
+        session.state = GameStateEnum.year_planning
     
     db.commit()
-    db.refresh(user)
-    
     return {
-        "message": "Financial position updated successfully",
-        "user_id": user_id,
-        "new_budget": user.budget,
-        "new_debt": user.debt,
-        "new_equity": user.equity
+        "message": "Year advanced",
+        "current_year": session.current_year,
+        "state": session.state.value
     }
 
-@app.get("/game-sessions/{session_id}/utilities")
-def get_all_utilities(session_id: str, db: Session = Depends(get_db)):
-    """Get all utilities in a game session with their financial status"""
-    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Game session not found")
-    
-    # Get all utilities that have plants in this session
-    utilities_with_plants = db.query(DBUser).join(DBPowerPlant).filter(
-        DBPowerPlant.game_session_id == session_id,
-        DBUser.user_type == UserTypeEnum.utility
-    ).distinct().all()
-    
-    # Also get utilities without plants
-    all_utilities = db.query(DBUser).filter(DBUser.user_type == UserTypeEnum.utility).all()
-    
-    utility_data = []
-    for utility in all_utilities:
-        # Get plants for this utility in this session
-        plants = db.query(DBPowerPlant).filter(
-            DBPowerPlant.utility_id == utility.id,
-            DBPowerPlant.game_session_id == session_id
-        ).all()
-        
-        total_capacity = sum(plant.capacity_mw for plant in plants)
-        total_investment = sum(plant.capital_cost_total for plant in plants)
-        
-        utility_data.append({
-            "id": utility.id,
-            "username": utility.username,
-            "budget": utility.budget,
-            "debt": utility.debt,
-            "equity": utility.equity,
-            "plant_count": len(plants),
-            "total_capacity_mw": total_capacity,
-            "total_investment": total_investment,
-            "debt_to_equity_ratio": utility.debt / utility.equity if utility.equity > 0 else float('inf'),
-            "plants": [
-                {
-                    "id": plant.id,
-                    "name": plant.name,
-                    "plant_type": plant.plant_type.value,
-                    "capacity_mw": plant.capacity_mw,
-                    "status": plant.status.value,
-                    "capital_cost": plant.capital_cost_total
-                } for plant in plants
-            ]
-        })
-    
-    return {
-        "session_id": session_id,
-        "utilities": utility_data,
-        "total_utilities": len(utility_data)
-    }
-
-@app.post("/game-sessions/{session_id}/assign-portfolio")
-def assign_portfolio_to_utility(
-    session_id: str,
-    utility_id: str,
-    portfolio: PortfolioTemplate,
-    db: Session = Depends(get_db)
-):
-    """Assign a portfolio template to a specific utility"""
-    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Game session not found")
-    
-    utility = db.query(DBUser).filter(
-        DBUser.id == utility_id,
-        DBUser.user_type == UserTypeEnum.utility
-    ).first()
-    if not utility:
-        raise HTTPException(status_code=404, detail="Utility not found")
-    
-    try:
-        # Update utility finances
-        utility.budget = portfolio.initial_budget
-        utility.debt = portfolio.initial_debt
-        utility.equity = portfolio.initial_equity
-        
-        # Remove existing plants for this utility in this session
-        existing_plants = db.query(DBPowerPlant).filter(
-            DBPowerPlant.utility_id == utility_id,
-            DBPowerPlant.game_session_id == session_id
-        ).all()
-        
-        for plant in existing_plants:
-            db.delete(plant)
-        
-        # Create new plants from portfolio
-        created_plants = []
-        for plant_assignment in portfolio.plants:
-            if plant_assignment.plant_type not in PLANT_TEMPLATES_DATA:
-                raise HTTPException(status_code=400, detail=f"Invalid plant type: {plant_assignment.plant_type}")
-            
-            template_data = PLANT_TEMPLATES_DATA[plant_assignment.plant_type]
-            capacity_kw = plant_assignment.capacity_mw * 1000
-            
-            # Determine status based on commissioning year
-            if plant_assignment.commissioning_year <= session.current_year:
-                status = PlantStatusEnum.operating
-            else:
-                status = PlantStatusEnum.under_construction
-            
-            new_plant = DBPowerPlant(
-                id=str(uuid.uuid4()),
-                utility_id=utility_id,
-                game_session_id=session_id,
-                name=plant_assignment.plant_name,
-                plant_type=PlantTypeEnum(plant_assignment.plant_type),
-                capacity_mw=plant_assignment.capacity_mw,
-                construction_start_year=plant_assignment.construction_start_year,
-                commissioning_year=plant_assignment.commissioning_year,
-                retirement_year=plant_assignment.retirement_year,
-                status=status,
-                capital_cost_total=capacity_kw * template_data["overnight_cost_per_kw"],
-                fixed_om_annual=capacity_kw * template_data["fixed_om_per_kw_year"],
-                variable_om_per_mwh=template_data["variable_om_per_mwh"],
-                capacity_factor=template_data["capacity_factor_base"],
-                heat_rate=template_data.get("heat_rate"),
-                fuel_type=template_data.get("fuel_type"),
-                min_generation_mw=plant_assignment.capacity_mw * template_data["min_generation_pct"],
-                maintenance_years=json.dumps([])
-            )
-            
-            db.add(new_plant)
-            created_plants.append({
-                "name": new_plant.name,
-                "type": new_plant.plant_type.value,
-                "capacity": new_plant.capacity_mw,
-                "status": new_plant.status.value
-            })
-        
-        db.commit()
-        
-        return {
-            "message": f"Portfolio '{portfolio.name}' assigned successfully to {utility.username}",
-            "utility_id": utility_id,
-            "portfolio_name": portfolio.name,
-            "financial_position": {
-                "budget": utility.budget,
-                "debt": utility.debt,
-                "equity": utility.equity
-            },
-            "plants_created": created_plants,
-            "total_plants": len(created_plants),
-            "total_capacity": sum(plant["capacity"] for plant in created_plants)
-        }
-        
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to assign portfolio: {str(e)}")
-
-@app.post("/game-sessions/{session_id}/bulk-assign-portfolios")
-def bulk_assign_portfolios(
-    session_id: str,
-    assignments: BulkPortfolioAssignment,
-    db: Session = Depends(get_db)
-):
-    """Assign portfolios to multiple utilities at once"""
-    try:
-        # This would implement bulk portfolio assignment logic
-        return {
-            "message": "Portfolios assigned successfully",
-            "assignments": assignments
-        }
-    except Exception as e:
-        print(f"Error bulk assigning portfolios: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+# Dashboard endpoint - FIXED
 @app.get("/game-sessions/{session_id}/dashboard")
 def get_game_dashboard(session_id: str, db: Session = Depends(get_db)):
     """Get comprehensive game dashboard data"""
@@ -834,6 +676,7 @@ def get_game_dashboard(session_id: str, db: Session = Depends(get_db)):
             "recent_results": []
         }
 
+# Multi-year analysis endpoint - FIXED
 @app.get("/game-sessions/{session_id}/multi-year-analysis")
 def get_multi_year_analysis(session_id: str, db: Session = Depends(get_db)):
     """Get multi-year analysis data"""
@@ -906,75 +749,6 @@ def get_multi_year_analysis(session_id: str, db: Session = Depends(get_db)):
             "market_events": [],
             "analysis_period": f"{session.start_year} - {session.current_year}"
         }
-
-# Game Session Management
-@app.post("/game-sessions", response_model=GameSessionResponse)
-def create_game_session(session: GameSessionCreate, db: Session = Depends(get_db)):
-    # Create default demand profile inline
-    demand_profile_data = {
-        "off_peak_hours": 5000,
-        "shoulder_hours": 2500,
-        "peak_hours": 1260,
-        "off_peak_demand": 1200,
-        "shoulder_demand": 1800,
-        "peak_demand": 2400,
-        "demand_growth_rate": 0.02
-    }
-    
-    db_session = DBGameSession(
-        id=str(uuid.uuid4()),
-        name=session.name,
-        operator_id=session.operator_id,
-        start_year=session.start_year,
-        end_year=session.end_year,
-        current_year=session.start_year,
-        carbon_price_per_ton=session.carbon_price_per_ton,
-        demand_profile=json.dumps(demand_profile_data),
-        fuel_prices=json.dumps(DEFAULT_FUEL_PRICES)
-    )
-    db.add(db_session)
-    db.commit()
-    db.refresh(db_session)
-    return db_session
-
-@app.get("/game-sessions/{session_id}", response_model=GameSessionResponse)
-def get_game_session(session_id: str, db: Session = Depends(get_db)):
-    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Game session not found")
-    return session
-
-@app.put("/game-sessions/{session_id}/state")
-def update_game_state(session_id: str, new_state: str, db: Session = Depends(get_db)):
-    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Game session not found")
-    
-    try:
-        session.state = GameStateEnum(new_state)
-        db.commit()
-        return {"message": "Game state updated", "new_state": new_state}
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid game state: {new_state}")
-
-@app.put("/game-sessions/{session_id}/advance-year")
-def advance_year(session_id: str, db: Session = Depends(get_db)):
-    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Game session not found")
-    
-    if session.current_year >= session.end_year:
-        session.state = GameStateEnum.game_complete
-    else:
-        session.current_year += 1
-        session.state = GameStateEnum.year_planning
-    
-    db.commit()
-    return {
-        "message": "Year advanced",
-        "current_year": session.current_year,
-        "state": session.state.value
-    }
 
 # Plant Templates and Information
 @app.get("/plant-templates", response_model=List[PlantTemplateResponse])
