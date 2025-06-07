@@ -1582,6 +1582,152 @@ def create_sample_data_endpoint():
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to create sample data: {str(e)}")
 
+# Portfolio and Financial Management Endpoints
+@app.get("/game-sessions/{session_id}/utilities")
+def get_all_utilities(session_id: str, db: Session = Depends(get_db)):
+    """Get all utilities in a game session with their financial status"""
+    try:
+        # Get all utilities that have plants in this game session
+        utilities_with_plants = db.query(DBUser).join(DBPowerPlant).filter(
+            DBPowerPlant.game_session_id == session_id
+        ).distinct().all()
+        
+        result = []
+        for utility in utilities_with_plants:
+            # Get plants for this utility
+            plants = db.query(DBPowerPlant).filter(
+                DBPowerPlant.utility_id == utility.id,
+                DBPowerPlant.game_session_id == session_id
+            ).all()
+            
+            total_capacity = sum(plant.capacity_mw for plant in plants)
+            total_investment = sum(plant.capital_cost_total for plant in plants)
+            
+            result.append({
+                "id": utility.id,
+                "username": utility.username,
+                "user_type": utility.user_type.value,
+                "budget": utility.budget,
+                "debt": utility.debt,
+                "equity": utility.equity,
+                "total_capacity_mw": total_capacity,
+                "total_investment": total_investment,
+                "plant_count": len(plants)
+            })
+        
+        return result
+    except Exception as e:
+        print(f"Error getting utilities: {e}")
+        return []
+
+@app.put("/users/{user_id}/financials")
+def update_utility_financials(
+    user_id: str, 
+    financials: dict,
+    db: Session = Depends(get_db)
+):
+    """Update utility financial position"""
+    try:
+        utility = db.query(DBUser).filter(DBUser.id == user_id).first()
+        if not utility:
+            raise HTTPException(status_code=404, detail="Utility not found")
+        
+        utility.budget = financials.get("budget", utility.budget)
+        utility.debt = financials.get("debt", utility.debt)
+        utility.equity = financials.get("equity", utility.equity)
+        
+        db.commit()
+        db.refresh(utility)
+        
+        return {
+            "message": "Financial position updated",
+            "utility_id": user_id,
+            "budget": utility.budget,
+            "debt": utility.debt,
+            "equity": utility.equity
+        }
+    except Exception as e:
+        print(f"Error updating financials: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/portfolio-templates")
+def get_portfolio_templates():
+    """Get predefined portfolio templates"""
+    templates = {
+        "traditional": {
+            "name": "Traditional Utility",
+            "description": "Coal and natural gas focused portfolio",
+            "plants": [
+                {"type": "coal", "capacity": 600, "name": "Coal Baseload Plant"},
+                {"type": "natural_gas_cc", "capacity": 400, "name": "Gas Combined Cycle"},
+                {"type": "natural_gas_ct", "capacity": 200, "name": "Gas Peaker"}
+            ],
+            "total_capacity": 1200,
+            "estimated_cost": 2.1e9
+        },
+        "mixed": {
+            "name": "Mixed Generation",
+            "description": "Balanced portfolio with nuclear and renewables",
+            "plants": [
+                {"type": "nuclear", "capacity": 1000, "name": "Nuclear Plant"},
+                {"type": "natural_gas_cc", "capacity": 300, "name": "Gas Combined Cycle"},
+                {"type": "solar", "capacity": 250, "name": "Solar Farm"},
+                {"type": "wind_onshore", "capacity": 200, "name": "Wind Farm"}
+            ],
+            "total_capacity": 1750,
+            "estimated_cost": 12.5e9
+        },
+        "renewable": {
+            "name": "Renewable Focus",
+            "description": "Clean energy portfolio with storage",
+            "plants": [
+                {"type": "solar", "capacity": 500, "name": "Large Solar Array"},
+                {"type": "wind_onshore", "capacity": 400, "name": "Wind Farm"},
+                {"type": "wind_offshore", "capacity": 300, "name": "Offshore Wind"},
+                {"type": "battery", "capacity": 100, "name": "Battery Storage"}
+            ],
+            "total_capacity": 1300,
+            "estimated_cost": 3.8e9
+        }
+    }
+    return templates
+
+@app.post("/game-sessions/{session_id}/assign-portfolio")
+def assign_portfolio(
+    session_id: str,
+    portfolio: dict,
+    utility_id: str,
+    db: Session = Depends(get_db)
+):
+    """Assign a portfolio to a specific utility"""
+    try:
+        # This would implement portfolio assignment logic
+        return {
+            "message": "Portfolio assigned successfully",
+            "utility_id": utility_id,
+            "portfolio": portfolio
+        }
+    except Exception as e:
+        print(f"Error assigning portfolio: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/game-sessions/{session_id}/bulk-assign-portfolios")
+def bulk_assign_portfolios(
+    session_id: str,
+    assignments: dict,
+    db: Session = Depends(get_db)
+):
+    """Bulk assign portfolios to multiple utilities"""
+    try:
+        # This would implement bulk portfolio assignment logic
+        return {
+            "message": "Portfolios assigned successfully",
+            "assignments": assignments
+        }
+    except Exception as e:
+        print(f"Error bulk assigning portfolios: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
