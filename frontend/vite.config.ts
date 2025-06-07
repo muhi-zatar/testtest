@@ -6,14 +6,21 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true, // Allow external connections
-    open: false, // Don't auto-open browser
+    open: true, // Auto-open browser for easier debugging
+    strictPort: true, // Fail if port is already in use
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        rewrite: (path) => path.replace(/^\/api/, ''),
+        secure: false,
+        ws: true
       }
     }
+  },
+  define: {
+    // Make sure environment variables are available
+    __DEV__: JSON.stringify(true)
   },
   build: {
     sourcemap: true, // Enable source maps for debugging
@@ -30,6 +37,7 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query']
+    include: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
+    exclude: []
   }
 })

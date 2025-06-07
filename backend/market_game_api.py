@@ -547,7 +547,7 @@ def get_game_session(session_id: str, db: Session = Depends(get_db)):
     return session
 
 @app.put("/game-sessions/{session_id}/state")
-def update_game_state(session_id: str, new_state: str, db: Session = Depends(get_db)):
+def update_game_state(session_id: str, new_state: str = Query(...), db: Session = Depends(get_db)):
     session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Game session not found")

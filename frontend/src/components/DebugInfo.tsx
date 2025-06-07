@@ -6,21 +6,55 @@ const DebugInfo: React.FC = () => {
 
   React.useEffect(() => {
     // Test API connection
+    const testAPI = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/health', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('✅ API Health Check:', data);
+        setApiStatus('success');
+      } catch (error) {
+        console.error('❌ API Health Check Failed:', error);
+        setApiError(error instanceof Error ? error.message : 'Unknown error');
+        setApiStatus('error');
+      }
+    };
+    
+    testAPI();
+  }, []);
+
+  const handleTestConnection = () => {
+    setApiStatus('checking');
+    setApiError('');
     fetch('http://localhost:8000/health')
-      .then(response => response.json())
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+      })
       .then(data => {
         console.log('✅ API Health Check:', data);
         setApiStatus('success');
       })
       .catch(error => {
         console.error('❌ API Health Check Failed:', error);
-        setApiError(error.message);
+        setApiError(error instanceof Error ? error.message : 'Unknown error');
         setApiStatus('error');
       });
-  }, []);
+  };
 
   return (
-    <div className="fixed bottom-4 right-4 bg-gray-800 border border-gray-600 rounded-lg p-4 text-sm max-w-sm">
+    <div className="fixed bottom-4 right-4 bg-gray-800 border border-gray-600 rounded-lg p-4 text-sm max-w-sm z-50">
       <h3 className="font-semibold text-white mb-2">Debug Info</h3>
       
       <div className="space-y-2">
@@ -49,7 +83,13 @@ const DebugInfo: React.FC = () => {
         
         {apiStatus === 'error' && (
           <div className="text-red-400 text-xs mt-2">
-            Error: {apiError}
+            <div>Error: {apiError}</div>
+            <button 
+              onClick={handleTestConnection}
+              className="mt-1 px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs"
+            >
+              Retry
+            </button>
           </div>
         )}
         
@@ -61,6 +101,12 @@ const DebugInfo: React.FC = () => {
         <div className="flex justify-between">
           <span className="text-gray-400">Port:</span>
           <span className="text-blue-400">{window.location.port || '80'}</span>
+        </div>
+      </div>
+      
+      <div className="mt-3 pt-2 border-t border-gray-600">
+        <div className="text-xs text-gray-400">
+          Backend: {apiStatus === 'success' ? 'localhost:8000' : 'Not connected'}
         </div>
       </div>
     </div>

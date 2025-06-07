@@ -165,7 +165,11 @@ export const useGameStore = create<GameStore>()(
         currentSession: state.currentSession,
       }),
       onRehydrateStorage: () => (state) => {
-        console.log('🔄 Store rehydrated:', state);
+        if (state) {
+          console.log('🔄 Store rehydrated successfully');
+        } else {
+          console.log('🔄 Store rehydration failed or empty');
+        }
       },
     }
   )

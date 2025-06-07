@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast';
 
 // Import layouts and pages
 import RoleSelector from './components/RoleSelector';
+import TestPage from './components/TestPage';
 import InstructorLayout from './layouts/InstructorLayout';
 import UtilityLayout from './layouts/UtilityLayout';
 
@@ -87,12 +88,19 @@ class ErrorBoundary extends React.Component<
 function App() {
   // Add some basic logging
   React.useEffect(() => {
-    console.log('🚀 Electricity Market Game App starting...');
+    console.log('🎮 Electricity Market Game App component mounted');
     console.log('Environment:', {
       NODE_ENV: import.meta.env.MODE,
       BASE_URL: import.meta.env.BASE_URL,
-      DEV: import.meta.env.DEV
+      DEV: import.meta.env.DEV,
+      VITE_API_URL: import.meta.env.VITE_API_URL || 'http://localhost:8000'
     });
+    
+    // Test if basic React functionality is working
+    console.log('✅ React hooks working');
+    
+    // Test if router is working
+    console.log('🔗 Current location:', window.location.href);
   }, []);
 
   return (
@@ -103,6 +111,9 @@ function App() {
             <Routes>
               {/* Role Selection */}
               <Route path="/" element={<RoleSelector />} />
+              
+              {/* Test Page - only in development */}
+              {import.meta.env.DEV && <Route path="/test" element={<TestPage />} />}
               
               {/* Instructor Routes */}
               <Route path="/instructor" element={<InstructorLayout />}>
