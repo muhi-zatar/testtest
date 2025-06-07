@@ -3,14 +3,16 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { 
   ChartBarIcon,
-  TrendingUpIcon,
-  TrendingDownIcon,
   InformationCircleIcon,
   BoltIcon,
   CurrencyDollarIcon,
   FireIcon,
   CloudIcon
 } from '@heroicons/react/24/outline';
+import { 
+  TrendingUpIcon,
+  TrendingDownIcon
+} from '@heroicons/react/24/solid';
 import { 
   LineChart, 
   Line, 
@@ -350,7 +352,7 @@ const MarketAnalysis: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
-            <FireIcon className="w-5 h-5 mr-2" />
+            <FireIcon className="w-6 h-6 mr-2" />
             Fuel Price Projections
           </h3>
           <div className="h-64">

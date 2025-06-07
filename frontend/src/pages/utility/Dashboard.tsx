@@ -6,10 +6,12 @@ import {
   BoltIcon,
   BuildingOffice2Icon,
   CurrencyDollarIcon,
-  TrendingUpIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
+import { 
+  TrendingUpIcon
+} from '@heroicons/react/24/solid';
 import { 
   LineChart, 
   Line, 
