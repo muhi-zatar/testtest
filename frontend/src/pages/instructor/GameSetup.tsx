@@ -1205,3 +1205,5 @@ const GameSetup: React.FC = () => {
 };
 
 export default GameSetup;
+
+export default GameSetup
