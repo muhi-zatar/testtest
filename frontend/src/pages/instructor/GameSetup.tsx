@@ -14,7 +14,9 @@ import {
   BoltIcon,
   BuildingOffice2Icon,
   CurrencyDollarIcon,
-  FireIcon
+  FireIcon,
+  UserGroupIcon,
+  BanknotesIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -52,7 +54,7 @@ const GameSetup: React.FC = () => {
   const { setCurrentSession } = useGameStore();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'create' | 'scenarios' | 'manage'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'scenarios' | 'manage' | 'portfolios'>('create');
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   
   // Form state for new game creation
@@ -155,6 +157,19 @@ const GameSetup: React.FC = () => {
     },
   ];
 
+  // Get portfolio templates
+  const { data: portfolioTemplates } = useQuery({
+    queryKey: ['portfolio-templates'],
+    queryFn: ElectricityMarketAPI.getPortfolioTemplates,
+  });
+
+  // Get utilities for current session
+  const { data: utilitiesData } = useQuery({
+    queryKey: ['session-utilities', currentSession?.id],
+    queryFn: () => currentSession ? ElectricityMarketAPI.getAllUtilities(currentSession.id) : null,
+    enabled: !!currentSession,
+  });
+
   // Get existing game sessions
   const { data: existingSessions, isLoading } = useQuery({
     queryKey: ['game-sessions'],
@@ -215,6 +230,35 @@ const GameSetup: React.FC = () => {
     }
   });
 
+  // Portfolio assignment mutations
+  const assignPortfolioMutation = useMutation({
+    mutationFn: ({ utilityId, portfolio }: { utilityId: string; portfolio: any }) => {
+      if (!currentSession) throw new Error('No active session');
+      return ElectricityMarketAPI.assignPortfolio(currentSession.id, utilityId, portfolio);
+    },
+    onSuccess: () => {
+      toast.success('Portfolio assigned successfully!');
+      queryClient.invalidateQueries({ queryKey: ['session-utilities'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to assign portfolio');
+    }
+  });
+
+  const bulkAssignMutation = useMutation({
+    mutationFn: (assignments: any) => {
+      if (!currentSession) throw new Error('No active session');
+      return ElectricityMarketAPI.bulkAssignPortfolios(currentSession.id, assignments);
+    },
+    onSuccess: (data) => {
+      toast.success(`Bulk assignment completed: ${data.successful_assignments.length} successful`);
+      queryClient.invalidateQueries({ queryKey: ['session-utilities'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to bulk assign portfolios');
+    }
+  });
+
   const handleCreateGame = () => {
     if (!gameConfig.name.trim()) {
       toast.error('Please enter a game name');
@@ -237,6 +281,41 @@ const GameSetup: React.FC = () => {
     });
     setActiveTab('create');
     toast.success(`Applied ${scenario.name} scenario template`);
+  };
+
+  const handleAssignPortfolio = (utilityId: string, templateId: string) => {
+    const template = portfolioTemplates?.templates.find((t: any) => t.id === templateId);
+    if (!template) {
+      toast.error('Template not found');
+      return;
+    }
+
+    assignPortfolioMutation.mutate({ utilityId, portfolio: template });
+  };
+
+  const handleBulkAssignDefault = () => {
+    if (!portfolioTemplates || !utilitiesData) {
+      toast.error('Data not loaded');
+      return;
+    }
+
+    const templates = portfolioTemplates.templates;
+    const utilities = utilitiesData.utilities;
+
+    if (utilities.length < 3) {
+      toast.error('Need at least 3 utilities for default assignment');
+      return;
+    }
+
+    const assignments = {
+      utility_assignments: {
+        [utilities[0].id]: templates.find((t: any) => t.id === 'traditional'),
+        [utilities[1].id]: templates.find((t: any) => t.id === 'mixed'),
+        [utilities[2].id]: templates.find((t: any) => t.id === 'renewable'),
+      }
+    };
+
+    bulkAssignMutation.mutate(assignments);
   };
 
   const updateDemandProfile = (field: keyof GameSessionConfig['demand_profile'], value: number) => {
@@ -288,6 +367,7 @@ const GameSetup: React.FC = () => {
             { id: 'create', name: 'Create New Game', icon: PlusIcon },
             { id: 'scenarios', name: 'Scenario Templates', icon: DocumentDuplicateIcon },
             { id: 'manage', name: 'Manage Sessions', icon: CogIcon },
+            { id: 'portfolios', name: 'Portfolio Assignment', icon: UserGroupIcon },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -783,6 +863,158 @@ const GameSetup: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Portfolio Assignment Tab */}
+        {activeTab === 'portfolios' && (
+          <div className="p-6 space-y-6">
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-white mb-2">Portfolio Assignment</h3>
+              <p className="text-gray-400">Assign starting portfolios and bank accounts to utilities</p>
+            </div>
+
+            {!currentSession ? (
+              <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-6 text-center">
+                <ExclamationTriangleIcon className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-yellow-400 mb-2">No Active Session</h3>
+                <p className="text-gray-300">Create or select a game session first</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Quick Assignment */}
+                <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 className="font-semibold text-blue-300">Quick Assignment</h4>
+                      <p className="text-gray-400 text-sm">Assign default portfolios to all utilities</p>
+                    </div>
+                    <button
+                      onClick={handleBulkAssignDefault}
+                      disabled={bulkAssignMutation.isPending}
+                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg"
+                    >
+                      {bulkAssignMutation.isPending ? 'Assigning...' : 'Assign Default Portfolios'}
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-300">
+                    This will assign: Traditional portfolio to Utility 1, Mixed portfolio to Utility 2, 
+                    and Renewable portfolio to Utility 3.
+                  </p>
+                </div>
+
+                {/* Current Utilities */}
+                {utilitiesData && (
+                  <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <h4 className="font-semibold text-white mb-4">Current Utilities</h4>
+                    <div className="space-y-4">
+                      {utilitiesData.utilities.map((utility: any) => (
+                        <div key={utility.id} className="bg-gray-700 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <h5 className="font-medium text-white">{utility.username}</h5>
+                              <p className="text-sm text-gray-400">ID: {utility.id}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm text-gray-400">Budget</p>
+                              <p className="text-lg font-semibold text-green-400">
+                                ${(utility.budget / 1e9).toFixed(1)}B
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div className="bg-gray-600 rounded p-3">
+                              <p className="text-xs text-gray-400">Debt</p>
+                              <p className="text-white font-medium">${(utility.debt / 1e9).toFixed(1)}B</p>
+                            </div>
+                            <div className="bg-gray-600 rounded p-3">
+                              <p className="text-xs text-gray-400">Equity</p>
+                              <p className="text-white font-medium">${(utility.equity / 1e9).toFixed(1)}B</p>
+                            </div>
+                            <div className="bg-gray-600 rounded p-3">
+                              <p className="text-xs text-gray-400">Plants</p>
+                              <p className="text-white font-medium">{utility.plant_count} ({utility.total_capacity_mw.toLocaleString()} MW)</p>
+                            </div>
+                          </div>
+
+                          {utility.plants.length > 0 && (
+                            <div className="mb-4">
+                              <p className="text-sm font-medium text-gray-300 mb-2">Current Plants:</p>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                {utility.plants.map((plant: any) => (
+                                  <div key={plant.id} className="bg-gray-600 rounded p-2">
+                                    <p className="text-sm text-white font-medium">{plant.name}</p>
+                                    <p className="text-xs text-gray-400">
+                                      {plant.plant_type.replace('_', ' ')} • {plant.capacity_mw} MW • {plant.status}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Portfolio Assignment Buttons */}
+                          <div className="flex flex-wrap gap-2">
+                            {portfolioTemplates?.templates.map((template: any) => (
+                              <button
+                                key={template.id}
+                                onClick={() => handleAssignPortfolio(utility.id, template.id)}
+                                disabled={assignPortfolioMutation.isPending}
+                                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-3 py-1 rounded text-sm"
+                              >
+                                Assign {template.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Portfolio Templates */}
+                {portfolioTemplates && (
+                  <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <h4 className="font-semibold text-white mb-4">Available Portfolio Templates</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {portfolioTemplates.templates.map((template: any) => (
+                        <div key={template.id} className="bg-gray-700 rounded-lg p-4">
+                          <h5 className="font-medium text-white mb-2">{template.name}</h5>
+                          <p className="text-sm text-gray-400 mb-4">{template.description}</p>
+                          
+                          <div className="space-y-2 mb-4">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Initial Budget:</span>
+                              <span className="text-green-400">${(template.initial_budget / 1e9).toFixed(1)}B</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Plants:</span>
+                              <span className="text-white">{template.plants.length}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Total Capacity:</span>
+                              <span className="text-blue-400">
+                                {template.plants.reduce((sum: number, plant: any) => sum + plant.capacity_mw, 0).toLocaleString()} MW
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-gray-300">Plants:</p>
+                            {template.plants.map((plant: any, index: number) => (
+                              <p key={index} className="text-xs text-gray-400">
+                                • {plant.plant_name} ({plant.capacity_mw} MW {plant.plant_type.replace('_', ' ')})
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
