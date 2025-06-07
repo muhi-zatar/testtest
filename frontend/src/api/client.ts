@@ -136,16 +136,16 @@ export class ElectricityMarketAPI {
     shoulder_price: number;
     peak_price: number;
   }) {
-    const response = await api.post(`/game-sessions/${sessionId}/bids`, bidData, {
-      params: { utility_id: utilityId }
-    });
+    const response = await api.post(`/game-sessions/${sessionId}/bids?utility_id=${utilityId}`, bidData);
     return response.data;
   }
 
   static async getYearlyBids(sessionId: string, year?: number, utilityId?: string): Promise<YearlyBid[]> {
-    const response = await api.get(`/game-sessions/${sessionId}/bids`, {
-      params: { year, utility_id: utilityId }
-    });
+    const params = new URLSearchParams();
+    if (year) params.append('year', year.toString());
+    if (utilityId) params.append('utility_id', utilityId);
+    
+    const response = await api.get(`/game-sessions/${sessionId}/bids?${params.toString()}`);
     return response.data;
   }
 
