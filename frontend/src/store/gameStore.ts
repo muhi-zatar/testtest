@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export interface GameSession {
   id: string;
@@ -158,11 +158,15 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'electricity-market-game',
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         role: state.role,
         utilityId: state.utilityId,
         currentSession: state.currentSession,
       }),
+      onRehydrateStorage: () => (state) => {
+        console.log('🔄 Store rehydrated:', state);
+      },
     }
   )
 );

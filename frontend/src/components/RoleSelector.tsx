@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AcademicCapIcon, BuildingOfficeIcon } from '@heroicons/react/24/outline';
 import { useGameStore } from '../store/gameStore';
+import DebugInfo from './DebugInfo';
 
 const RoleSelector: React.FC = () => {
   const navigate = useNavigate();
@@ -21,6 +22,9 @@ const RoleSelector: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-gray-900 to-green-900 flex items-center justify-center p-4">
+      {/* Debug Info - only show in development */}
+      {import.meta.env.DEV && <DebugInfo />}
+      
       <div className="max-w-4xl w-full">
         {/* Header */}
         <div className="text-center mb-12">
