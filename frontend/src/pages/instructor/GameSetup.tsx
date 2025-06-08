@@ -48,9 +48,18 @@ const GameSetup: React.FC = () => {
     endYear: 2035,
     carbonPrice: 50,
     numberOfUtilities: 3,
-    utilityNames: ['Utility 1', 'Utility 2', 'Utility 3'],
+    utilityNames: [],
     portfolioAssignments: {}
   });
+
+  // Initialize utility names with unique identifiers
+  useEffect(() => {
+    if (setupData.utilityNames.length === 0) {
+      const sessionId = Date.now().toString().slice(-4);
+      const newNames = Array.from({ length: setupData.numberOfUtilities }, (_, i) => `Utility ${i + 1} (${sessionId})`);
+      setSetupData(prev => ({ ...prev, utilityNames: newNames }));
+    }
+  }, [setupData.numberOfUtilities, setupData.utilityNames.length]);
 
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [createdUtilities, setCreatedUtilities] = useState<Array<{id: string, username: string}>>([]);
@@ -88,8 +97,10 @@ const GameSetup: React.FC = () => {
     mutationFn: async (utilityNames: string[]) => {
       const utilities = [];
       for (const name of utilityNames) {
+        // Create unique username by adding timestamp or session ID
+        const uniqueUsername = `${name.toLowerCase().replace(/\s+/g, '_')}_${Date.now().toString().slice(-6)}`;
         const utility = await ElectricityMarketAPI.createUser({
-          username: name.toLowerCase().replace(/\s+/g, '_'),
+          username: uniqueUsername,
           user_type: 'utility'
         });
         utilities.push(utility);
@@ -155,7 +166,9 @@ const GameSetup: React.FC = () => {
   });
 
   const handleUtilityCountChange = (count: number) => {
-    const newNames = Array.from({ length: count }, (_, i) => `Utility ${i + 1}`);
+    // Generate unique names for this session
+    const sessionId = Date.now().toString().slice(-4);
+    const newNames = Array.from({ length: count }, (_, i) => `Utility ${i + 1} (${sessionId})`);
     setSetupData(prev => ({
       ...prev,
       numberOfUtilities: count,

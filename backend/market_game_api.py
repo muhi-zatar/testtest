@@ -336,6 +336,20 @@ async def health_check():
 @app.post("/users")
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     try:
+        # Check if user already exists
+        existing_user = db.query(DBUser).filter(DBUser.username == user.username).first()
+        if existing_user:
+            # If user exists, return the existing user instead of creating a new one
+            return {
+                "id": existing_user.id,
+                "username": existing_user.username,
+                "user_type": existing_user.user_type,
+                "budget": existing_user.budget,
+                "debt": existing_user.debt,
+                "equity": existing_user.equity,
+                "message": "User already exists, returning existing user"
+            }
+        
         # Set default budgets based on user type
         if user.user_type == UserTypeEnum.operator:
             budget = 10000000000  # $10B for operator
