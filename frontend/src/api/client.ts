@@ -244,6 +244,7 @@ export class ElectricityMarketAPI {
     }
   }
 
+  // Add method to get all users (for role selector)
   static async getAllUsers() {
     const response = await api.get('/users');
     return response.data;

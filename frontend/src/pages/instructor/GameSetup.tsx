@@ -589,25 +589,6 @@ const GameSetup: React.FC = () => {
             <div className="bg-green-900/20 border border-green-700 rounded-lg p-6">
               <h3 className="font-medium text-green-300 mb-4">Game Setup Complete!</h3>
               
-              {/* Utility Login Information */}
-              <div className="mb-6 p-4 bg-blue-900/20 border border-blue-700 rounded-lg">
-                <h4 className="font-medium text-blue-300 mb-3">Utility Login Information</h4>
-                <p className="text-sm text-gray-300 mb-3">
-                  Share these usernames with students for utility login:
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {createdUtilities.map((utility, index) => (
-                    <div key={utility.id} className="bg-gray-700 rounded px-3 py-2">
-                      <span className="text-white font-mono text-sm">{utility.username}</span>
-                      <span className="text-gray-400 text-xs ml-2">(ID: {utility.id})</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  Students can select these utilities from the role selector dropdown
-                </p>
-              </div>
-              
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="text-center">
                   <div className="bg-blue-600 p-3 rounded-lg w-12 h-12 mx-auto mb-2 flex items-center justify-center">
@@ -685,4 +666,74 @@ const GameSetup: React.FC = () => {
             {/* Next Steps */}
             <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-6">
               <h3 className="font-medium text-blue-300 mb-4">Next Steps</h3>
-              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-medium text-white mb-3">For Instructor:</h4>
+                  <ul className="space-y-2 text-sm text-gray-300">
+                    <li>• Start the year planning phase</li>
+                    <li>• Monitor utility participation</li>
+                    <li>• Open bidding when ready</li>
+                    <li>• Clear markets and advance years</li>
+                    <li>• Trigger market events as needed</li>
+                  </ul>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium text-white mb-3">For Utilities:</h4>
+                  <ul className="space-y-2 text-sm text-gray-300">
+                    <li>• Log in with utility credentials</li>
+                    <li>• Review initial portfolio</li>
+                    <li>• Plan investment strategies</li>
+                    <li>• Submit competitive bids</li>
+                    <li>• Monitor market performance</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between">
+              <button
+                onClick={() => setCurrentStep(3)}
+                className="bg-gray-600 hover:bg-gray-500 text-white px-6 py-2 rounded-lg"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleStartGame}
+                disabled={startGameMutation.isPending}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg font-semibold"
+              >
+                {startGameMutation.isPending ? 'Starting...' : 'Start Game!'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Current Session Info */}
+      {currentSession && (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h3 className="text-lg font-semibold text-white mb-4">Current Active Session</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <p className="text-sm text-gray-400">Session Name</p>
+              <p className="font-medium text-white">{currentSession.name}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-400">Current Year</p>
+              <p className="font-medium text-white">{currentSession.current_year}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-400">Game State</p>
+              <p className="font-medium text-green-400 capitalize">{currentSession.state.replace('_', ' ')}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default GameSetup;
+
+export default GameSetup
