@@ -245,6 +245,29 @@ const UtilityLayout: React.FC = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* Year Progress */}
+              {activeSession && (
+                <div className="bg-gray-700 rounded-lg px-4 py-2">
+                  <div className="flex items-center space-x-3">
+                    <span className="text-sm text-gray-300">Progress:</span>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-32 bg-gray-600 rounded-full h-2">
+                        <div 
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                          style={{
+                            width: `${((activeSession.current_year - activeSession.start_year) / 
+                                    (activeSession.end_year - activeSession.start_year)) * 100}%`
+                          }}
+                        />
+                      </div>
+                      <span className="text-sm text-white font-medium">
+                        {activeSession.current_year} / {activeSession.end_year}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {/* ROI Indicator */}
               {financials && totalInvestment > 0 && (
                 <div className="bg-gray-700 rounded-lg px-4 py-2">
