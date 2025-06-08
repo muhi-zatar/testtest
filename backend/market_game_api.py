@@ -141,6 +141,24 @@ class DBMarketResult(Base):
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+# Try to import and setup game orchestrator
+try:
+    from game_orchestrator import YearlyGameOrchestrator, add_orchestration_endpoints
+    print("✅ Game orchestrator imported successfully")
+    
+    # Initialize orchestrator
+    orchestrator = YearlyGameOrchestrator(SessionLocal())
+    print("✅ Game orchestrator initialized")
+    
+    # This will be called after app is created
+    _orchestrator = orchestrator
+except ImportError as e:
+    print(f"⚠️ Game orchestrator not available: {e}")
+    _orchestrator = None
+except Exception as e:
+    print(f"❌ Error setting up game orchestrator: {e}")
+    _orchestrator = None
+
 # Dependency
 def get_db():
     db = SessionLocal()
@@ -287,6 +305,14 @@ DEFAULT_FUEL_PRICES = {
     "2030": {"coal": 2.75, "natural_gas": 5.20, "uranium": 0.80}
 }
 
+# Add orchestration endpoints if available
+if _orchestrator:
+    try:
+        add_orchestration_endpoints(app, _orchestrator)
+        print("✅ Orchestration endpoints added successfully")
+    except Exception as e:
+        print(f"❌ Error adding orchestration endpoints: {e}")
+
 # Pydantic models
 class UserCreate(BaseModel):
     username: str
@@ -320,6 +346,159 @@ class YearlyBidCreate(BaseModel):
 class PortfolioAssignment(BaseModel):
     utility_id: str
     plants: List[Dict[str, Any]]
+
+# Manual orchestration endpoints (fallback if orchestrator import fails)
+@app.post("/game-sessions/{session_id}/start-year-planning/{year}")
+async def start_year_planning_fallback(session_id: str, year: int, db: Session = Depends(get_db)):
+    """Fallback endpoint for starting year planning"""
+    try:
+        session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Game session not found")
+        
+        session.state = GameStateEnum.year_planning
+        session.current_year = year
+        db.commit()
+        
+        return {
+            "status": "year_planning_started",
+            "year": year,
+            "message": f"Year {year} planning phase is open",
+            "session_state": session.state
+        }
+    except Exception as e:
+        print(f"Error in start_year_planning: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/game-sessions/{session_id}/open-annual-bidding/{year}")
+async def open_annual_bidding_fallback(session_id: str, year: int, db: Session = Depends(get_db)):
+    """Fallback endpoint for opening annual bidding"""
+    try:
+        session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Game session not found")
+        
+        session.state = GameStateEnum.bidding_open
+        db.commit()
+        
+        # Get available plants for bidding
+        plants = db.query(DBPowerPlant).filter(
+            DBPowerPlant.game_session_id == session_id,
+            DBPowerPlant.status == PlantStatusEnum.operating,
+            DBPowerPlant.commissioning_year <= year,
+            DBPowerPlant.retirement_year > year
+        ).all()
+        
+        return {
+            "status": "annual_bidding_open",
+            "year": year,
+            "message": f"Submit bids for all load periods in {year}",
+            "load_periods": {
+                "off_peak": {"hours": 5000, "description": "Night and weekend hours"},
+                "shoulder": {"hours": 2500, "description": "Daytime non-peak hours"},
+                "peak": {"hours": 1260, "description": "Evening and high-demand hours"}
+            },
+            "available_plants": len(plants),
+            "session_state": session.state
+        }
+    except Exception as e:
+        print(f"Error in open_annual_bidding: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/game-sessions/{session_id}/clear-annual-markets/{year}")
+async def clear_annual_markets_fallback(session_id: str, year: int, db: Session = Depends(get_db)):
+    """Fallback endpoint for clearing annual markets"""
+    try:
+        session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Game session not found")
+        
+        # Get all bids for this year
+        bids = db.query(DBYearlyBid).filter(
+            DBYearlyBid.game_session_id == session_id,
+            DBYearlyBid.year == year
+        ).all()
+        
+        if not bids:
+            raise HTTPException(status_code=400, detail=f"No bids found for year {year}")
+        
+        # Simple market clearing (just set some mock results)
+        session.state = GameStateEnum.market_clearing
+        db.commit()
+        
+        # Create mock market results for each period
+        periods = ['off_peak', 'shoulder', 'peak']
+        clearing_prices = [45.0, 55.0, 75.0]  # Mock prices
+        
+        results = {}
+        for i, period in enumerate(periods):
+            # Calculate total quantity bid for this period
+            if period == 'off_peak':
+                total_quantity = sum(bid.off_peak_quantity for bid in bids)
+            elif period == 'shoulder':
+                total_quantity = sum(bid.shoulder_quantity for bid in bids)
+            else:  # peak
+                total_quantity = sum(bid.peak_quantity for bid in bids)
+            
+            # Create market result
+            market_result = DBMarketResult(
+                game_session_id=session_id,
+                year=year,
+                period=LoadPeriodEnum(period),
+                clearing_price=clearing_prices[i],
+                cleared_quantity=total_quantity,
+                total_energy=total_quantity * (5000 if period == 'off_peak' else 2500 if period == 'shoulder' else 1260),
+                accepted_supply_bids=json.dumps([bid.id for bid in bids])
+            )
+            db.add(market_result)
+            
+            results[period] = {
+                "clearing_price": clearing_prices[i],
+                "cleared_quantity": total_quantity,
+                "total_energy": market_result.total_energy,
+                "accepted_bids": len(bids)
+            }
+        
+        db.commit()
+        
+        return {
+            "status": "annual_markets_cleared",
+            "year": year,
+            "results": results,
+            "message": f"Markets cleared for year {year}",
+            "session_state": session.state
+        }
+    except Exception as e:
+        print(f"Error in clear_annual_markets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/game-sessions/{session_id}/complete-year/{year}")
+async def complete_year_fallback(session_id: str, year: int, db: Session = Depends(get_db)):
+    """Fallback endpoint for completing a year"""
+    try:
+        session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Game session not found")
+        
+        # Check if game should continue
+        if year >= session.end_year:
+            session.state = GameStateEnum.game_complete
+            message = f"Game completed! Final results for {session.start_year}-{session.end_year}"
+        else:
+            session.state = GameStateEnum.year_complete
+            message = f"Year {year} completed. Preparing for {year + 1}"
+        
+        db.commit()
+        
+        return {
+            "status": "year_completed",
+            "year": year,
+            "message": message,
+            "session_state": session.state
+        }
+    except Exception as e:
+        print(f"Error in complete_year: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # API Endpoints
 
