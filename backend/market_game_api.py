@@ -1224,6 +1224,200 @@ async def create_sample_data(db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+# Portfolio Templates
+PORTFOLIO_TEMPLATES = [
+    {
+        "id": "traditional",
+        "name": "Traditional Utility",
+        "description": "Coal and natural gas focused portfolio with reliable baseload generation",
+        "plants": [
+            {"plant_type": "coal", "capacity_mw": 600, "name": "Coal Baseload Plant"},
+            {"plant_type": "natural_gas_cc", "capacity_mw": 400, "name": "Gas Combined Cycle"},
+            {"plant_type": "natural_gas_ct", "capacity_mw": 150, "name": "Gas Peaker"}
+        ]
+    },
+    {
+        "id": "mixed",
+        "name": "Mixed Generation",
+        "description": "Balanced portfolio with nuclear, renewables, and thermal generation",
+        "plants": [
+            {"plant_type": "nuclear", "capacity_mw": 1000, "name": "Nuclear Baseload"},
+            {"plant_type": "solar", "capacity_mw": 250, "name": "Solar Farm"},
+            {"plant_type": "wind_onshore", "capacity_mw": 200, "name": "Wind Farm"}
+        ]
+    },
+    {
+        "id": "renewable",
+        "name": "Renewable Focus",
+        "description": "Clean energy portfolio with solar, wind, and battery storage",
+        "plants": [
+            {"plant_type": "solar", "capacity_mw": 400, "name": "Large Solar Project"},
+            {"plant_type": "wind_offshore", "capacity_mw": 300, "name": "Offshore Wind"},
+            {"plant_type": "battery", "capacity_mw": 100, "name": "Grid Battery Storage"}
+        ]
+    },
+    {
+        "id": "balanced",
+        "name": "Balanced Portfolio",
+        "description": "Diversified mix across all major technologies",
+        "plants": [
+            {"plant_type": "natural_gas_cc", "capacity_mw": 300, "name": "Gas CC Unit"},
+            {"plant_type": "solar", "capacity_mw": 200, "name": "Solar Array"},
+            {"plant_type": "wind_onshore", "capacity_mw": 150, "name": "Wind Turbines"},
+            {"plant_type": "battery", "capacity_mw": 50, "name": "Energy Storage"}
+        ]
+    }
+]
+
+@app.get("/portfolio-templates")
+async def get_portfolio_templates():
+    """Get available portfolio templates for game setup"""
+    return PORTFOLIO_TEMPLATES
+
+@app.post("/game-sessions/{session_id}/assign-portfolio")
+async def assign_portfolio(
+    session_id: str,
+    portfolio_data: Dict[str, Any],
+    utility_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Assign a portfolio template to a utility"""
+    try:
+        # Find the portfolio template
+        template = next((t for t in PORTFOLIO_TEMPLATES if t["id"] == portfolio_data.get("template_id")), None)
+        if not template:
+            raise HTTPException(status_code=404, detail="Portfolio template not found")
+        
+        # Create plants for the utility
+        created_plants = []
+        for plant_config in template["plants"]:
+            template_data = PLANT_TEMPLATES_DATA[plant_config["plant_type"]]
+            capacity_kw = plant_config["capacity_mw"] * 1000
+            
+            plant = DBPowerPlant(
+                id=str(uuid.uuid4()),
+                utility_id=utility_id,
+                game_session_id=session_id,
+                name=plant_config["name"],
+                plant_type=PlantTypeEnum(plant_config["plant_type"]),
+                capacity_mw=plant_config["capacity_mw"],
+                construction_start_year=2020,
+                commissioning_year=2025,
+                retirement_year=2025 + template_data["economic_life_years"],
+                status=PlantStatusEnum.operating,
+                capital_cost_total=capacity_kw * template_data["overnight_cost_per_kw"],
+                fixed_om_annual=capacity_kw * template_data["fixed_om_per_kw_year"],
+                variable_om_per_mwh=template_data["variable_om_per_mwh"],
+                capacity_factor=template_data["capacity_factor_base"],
+                heat_rate=template_data.get("heat_rate"),
+                fuel_type=template_data.get("fuel_type"),
+                min_generation_mw=plant_config["capacity_mw"] * template_data["min_generation_pct"],
+                maintenance_years=json.dumps([])
+            )
+            db.add(plant)
+            created_plants.append(plant)
+        
+        # Update utility finances
+        utility = db.query(DBUser).filter(DBUser.id == utility_id).first()
+        if utility:
+            total_investment = sum(plant.capital_cost_total for plant in created_plants)
+            debt_financing = total_investment * 0.7
+            equity_financing = total_investment * 0.3
+            
+            utility.debt += debt_financing
+            utility.budget -= equity_financing
+            utility.equity -= equity_financing
+        
+        db.commit()
+        
+        return {
+            "message": f"Portfolio '{template['name']}' assigned successfully",
+            "plants_created": len(created_plants),
+            "total_capacity": sum(plant.capacity_mw for plant in created_plants),
+            "total_investment": sum(plant.capital_cost_total for plant in created_plants)
+        }
+        
+    except Exception as e:
+        print(f"Error assigning portfolio: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/game-sessions/{session_id}/bulk-assign-portfolios")
+async def bulk_assign_portfolios(
+    session_id: str,
+    assignments: Dict[str, str],
+    db: Session = Depends(get_db)
+):
+    """Assign portfolios to multiple utilities at once"""
+    try:
+        results = []
+        
+        for utility_id, template_id in assignments.items():
+            # Find the portfolio template
+            template = next((t for t in PORTFOLIO_TEMPLATES if t["id"] == template_id), None)
+            if not template:
+                continue
+            
+            # Create plants for the utility
+            created_plants = []
+            for plant_config in template["plants"]:
+                template_data = PLANT_TEMPLATES_DATA[plant_config["plant_type"]]
+                capacity_kw = plant_config["capacity_mw"] * 1000
+                
+                plant = DBPowerPlant(
+                    id=str(uuid.uuid4()),
+                    utility_id=utility_id,
+                    game_session_id=session_id,
+                    name=f"{plant_config['name']} ({utility_id})",
+                    plant_type=PlantTypeEnum(plant_config["plant_type"]),
+                    capacity_mw=plant_config["capacity_mw"],
+                    construction_start_year=2020,
+                    commissioning_year=2025,
+                    retirement_year=2025 + template_data["economic_life_years"],
+                    status=PlantStatusEnum.operating,
+                    capital_cost_total=capacity_kw * template_data["overnight_cost_per_kw"],
+                    fixed_om_annual=capacity_kw * template_data["fixed_om_per_kw_year"],
+                    variable_om_per_mwh=template_data["variable_om_per_mwh"],
+                    capacity_factor=template_data["capacity_factor_base"],
+                    heat_rate=template_data.get("heat_rate"),
+                    fuel_type=template_data.get("fuel_type"),
+                    min_generation_mw=plant_config["capacity_mw"] * template_data["min_generation_pct"],
+                    maintenance_years=json.dumps([])
+                )
+                db.add(plant)
+                created_plants.append(plant)
+            
+            # Update utility finances
+            utility = db.query(DBUser).filter(DBUser.id == utility_id).first()
+            if utility:
+                total_investment = sum(plant.capital_cost_total for plant in created_plants)
+                debt_financing = total_investment * 0.7
+                equity_financing = total_investment * 0.3
+                
+                utility.debt += debt_financing
+                utility.budget -= equity_financing
+                utility.equity -= equity_financing
+            
+            results.append({
+                "utility_id": utility_id,
+                "template": template["name"],
+                "plants_created": len(created_plants),
+                "total_capacity": sum(plant.capacity_mw for plant in created_plants)
+            })
+        
+        db.commit()
+        
+        return {
+            "message": "Portfolios assigned successfully",
+            "assignments": results,
+            "total_utilities": len(results)
+        }
+        
+    except Exception as e:
+        print(f"Error bulk assigning portfolios: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Health check endpoint
 @app.get("/")
 async def root():
