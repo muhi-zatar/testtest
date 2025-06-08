@@ -1,13 +1,32 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { AcademicCapIcon, BuildingOfficeIcon } from '@heroicons/react/24/outline';
 import { useGameStore } from '../store/gameStore';
+import ElectricityMarketAPI from '../api/client';
 import DebugInfo from './DebugInfo';
 
 const RoleSelector: React.FC = () => {
   const navigate = useNavigate();
   const { setRole, setUtilityId } = useGameStore();
-  const [selectedUtility, setSelectedUtility] = useState('utility_1');
+  const [selectedUtility, setSelectedUtility] = useState('');
+
+  // Get all users to find available utilities
+  const { data: allUsers, isLoading: usersLoading } = useQuery({
+    queryKey: ['all-users'],
+    queryFn: ElectricityMarketAPI.getAllUsers,
+    refetchInterval: 10000, // Refresh every 10 seconds to get newly created utilities
+  });
+
+  // Filter utilities from all users
+  const availableUtilities = allUsers?.filter(user => user.user_type === 'utility') || [];
+
+  // Set default selection when utilities are loaded
+  React.useEffect(() => {
+    if (availableUtilities.length > 0 && !selectedUtility) {
+      setSelectedUtility(availableUtilities[0].id);
+    }
+  }, [availableUtilities, selectedUtility]);
 
   const handleInstructorLogin = () => {
     setRole('instructor');
@@ -15,6 +34,11 @@ const RoleSelector: React.FC = () => {
   };
 
   const handleUtilityLogin = () => {
+    if (!selectedUtility) {
+      alert('Please select a utility first');
+      return;
+    }
+    
     setRole('utility');
     setUtilityId(selectedUtility);
     
@@ -103,22 +127,44 @@ const RoleSelector: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Select Your Utility
                 </label>
-                <select
-                  value={selectedUtility}
-                  onChange={(e) => setSelectedUtility(e.target.value)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500"
-                >
-                  <option value="utility_1">Utility 1 - Traditional Portfolio</option>
-                  <option value="utility_2">Utility 2 - Mixed Generation</option>
-                  <option value="utility_3">Utility 3 - Renewable Focus</option>
-                </select>
+                {usersLoading ? (
+                  <div className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-400">
+                    Loading utilities...
+                  </div>
+                ) : availableUtilities.length > 0 ? (
+                  <select
+                    value={selectedUtility}
+                    onChange={(e) => setSelectedUtility(e.target.value)}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500"
+                  >
+                    <option value="">Select a utility...</option>
+                    {availableUtilities.map((utility, index) => (
+                      <option key={utility.id} value={utility.id}>
+                        {utility.username} (${(utility.budget / 1e9).toFixed(1)}B budget)
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-400">
+                    No utilities available. Create utilities from instructor mode first.
+                  </div>
+                )}
+                
+                {availableUtilities.length > 0 && (
+                  <p className="text-xs text-gray-400 mt-2">
+                    {availableUtilities.length} utilities available for login
+                  </p>
+                )}
               </div>
               
               <button
                 onClick={handleUtilityLogin}
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+                disabled={!selectedUtility || usersLoading}
+                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
               >
-                Enter as Utility
+                {usersLoading ? 'Loading...' : 
+                 !selectedUtility ? 'Select Utility First' : 
+                 'Enter as Utility'}
               </button>
             </div>
           </div>
