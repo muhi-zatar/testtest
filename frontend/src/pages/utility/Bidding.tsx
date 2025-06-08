@@ -260,7 +260,15 @@ const Bidding: React.FC = () => {
           <p className="text-gray-300 mb-4">
             Current market state: <span className="capitalize">{currentSession.state.replace('_', ' ')}</span>
           </p>
-          <p className="text-gray-400">Wait for the instructor to open the bidding phase.</p>
+          <div className="space-y-2">
+            <p className="text-gray-400">Wait for the instructor to open the bidding phase.</p>
+            <div className="text-sm text-blue-300">
+              {currentSession.state === 'year_planning' && 'Year planning is currently active'}
+              {currentSession.state === 'market_clearing' && 'Markets are being cleared'}
+              {currentSession.state === 'year_complete' && 'Year completed, preparing for next year'}
+              {currentSession.state === 'setup' && 'Game setup in progress'}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -627,47 +635,4 @@ const Bidding: React.FC = () => {
                   <div>
                     <span className="text-gray-400">Year:</span>
                     <span className="text-white ml-2">{currentSession.current_year}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Carbon Price:</span>
-                    <span className="text-yellow-400 ml-2">${currentSession.carbon_price_per_ton}/ton</span>
-                  </div>
-                </div>
-              </div>
-
-              {fuelPrices && (
-                <div className="bg-gray-700 rounded-lg p-4">
-                  <h4 className="font-medium text-white mb-3 flex items-center">
-                    <FireIcon className="w-4 h-4 mr-2" />
-                    Fuel Prices
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    {Object.entries(fuelPrices.fuel_prices).map(([fuel, price]) => (
-                      <div key={fuel} className="flex justify-between">
-                        <span className="text-gray-400 capitalize">{fuel.replace('_', ' ')}:</span>
-                        <span className="text-white">${(price as number).toFixed(2)}/MMBtu</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
-                <h4 className="font-medium text-blue-300 mb-2">Bidding Tips</h4>
-                <ul className="text-sm text-gray-300 space-y-1">
-                  <li>• Price competitively but above marginal cost</li>
-                  <li>• Peak periods typically have higher clearing prices</li>
-                  <li>• Consider your competitors' likely strategies</li>
-                  <li>• Renewable plants often bid at $0-10/MWh</li>
-                  <li>• Storage can provide grid services at premium prices</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default Bidding;
+                
