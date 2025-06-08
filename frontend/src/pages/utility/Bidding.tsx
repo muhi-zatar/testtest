@@ -40,7 +40,7 @@ interface BidFormData {
 
 const Bidding: React.FC = () => {
   const { utilityId } = useParams<{ utilityId: string }>();
-  const { currentSession } = useGameStore();
+  const { currentSession, setCurrentSession } = useGameStore();
   const queryClient = useQueryClient();
 
   const [selectedPlant, setSelectedPlant] = useState<string>('');
@@ -55,36 +55,53 @@ const Bidding: React.FC = () => {
   });
   const [showCalculator, setShowCalculator] = useState<boolean>(false);
 
+  // Get fresh session data with frequent updates
+  const { data: sessionData } = useQuery({
+    queryKey: ['game-session', currentSession?.id],
+    queryFn: () => currentSession ? ElectricityMarketAPI.getGameSession(currentSession.id) : null,
+    enabled: !!currentSession,
+    refetchInterval: 3000, // Check every 3 seconds for state changes
+    onSuccess: (data) => {
+      if (data && data.state !== currentSession?.state) {
+        console.log('🔄 Game state updated in bidding:', data.state);
+        setCurrentSession(data);
+      }
+    }
+  });
+
+  // Use the most up-to-date session data
+  const activeSession = sessionData || currentSession;
+
   // Get utility plants available for bidding
   const { data: plants, isLoading: plantsLoading } = useQuery({
-    queryKey: ['utility-plants', utilityId, currentSession?.id],
+    queryKey: ['utility-plants', utilityId, activeSession?.id],
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getPowerPlants(currentSession.id, utilityId) : null,
-    enabled: !!utilityId && !!currentSession,
+    enabled: !!utilityId && !!activeSession,
   });
 
   // Get existing bids for current year
   const { data: existingBids, isLoading: bidsLoading } = useQuery({
-    queryKey: ['utility-bids', utilityId, currentSession?.id, currentSession?.current_year],
+    queryKey: ['utility-bids', utilityId, activeSession?.id, activeSession?.current_year],
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getYearlyBids(currentSession.id, currentSession.current_year, utilityId) : null,
-    enabled: !!utilityId && !!currentSession,
+    enabled: !!utilityId && !!activeSession,
   });
 
   // Get fuel prices for cost calculations
   const { data: fuelPrices } = useQuery({
-    queryKey: ['fuel-prices', currentSession?.id, currentSession?.current_year],
+    queryKey: ['fuel-prices', activeSession?.id, activeSession?.current_year],
     queryFn: () => currentSession ? 
       ElectricityMarketAPI.getFuelPrices(currentSession.id, currentSession.current_year) : null,
-    enabled: !!currentSession,
+    enabled: !!activeSession,
   });
 
   // Get plant economics for selected plant
   const { data: plantEconomics } = useQuery({
-    queryKey: ['plant-economics', currentSession?.id, selectedPlant, currentSession?.current_year],
+    queryKey: ['plant-economics', activeSession?.id, selectedPlant, activeSession?.current_year],
     queryFn: () => currentSession && selectedPlant ? 
       ElectricityMarketAPI.getPlantEconomics(currentSession.id, selectedPlant, currentSession.current_year) : null,
-    enabled: !!currentSession && !!selectedPlant,
+    enabled: !!activeSession && !!selectedPlant,
   });
 
   // Submit bid mutation
@@ -119,7 +136,7 @@ const Bidding: React.FC = () => {
   // Filter operating plants
   const operatingPlants = plants?.filter(plant => 
     plant.status === 'operating' && 
-    plant.commissioning_year <= (currentSession?.current_year || 2025)
+    plant.commissioning_year <= (activeSession?.current_year || 2025)
   ) || [];
 
   // Calculate marginal costs
@@ -136,7 +153,7 @@ const Bidding: React.FC = () => {
     }
     
     // Add carbon cost (simplified)
-    const carbonCost = getPlantEmissions(plant.plant_type) * (currentSession?.carbon_price_per_ton || 0);
+    const carbonCost = getPlantEmissions(plant.plant_type) * (activeSession?.carbon_price_per_ton || 0);
     marginalCost += carbonCost;
     
     return marginalCost;
@@ -239,7 +256,7 @@ const Bidding: React.FC = () => {
     );
   }
 
-  if (!currentSession) {
+  if (!activeSession) {
     return (
       <div className="p-6">
         <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-6 text-center">
@@ -251,14 +268,14 @@ const Bidding: React.FC = () => {
     );
   }
 
-  if (currentSession.state !== 'bidding_open') {
+  if (activeSession.state !== 'bidding_open') {
     return (
       <div className="p-6">
         <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-6 text-center">
           <ClockIcon className="w-12 h-12 text-blue-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-blue-400 mb-2">Bidding Not Open</h3>
           <p className="text-gray-300 mb-4">
-            Current market state: <span className="capitalize">{currentSession.state.replace('_', ' ')}</span>
+            Current market state: <span className="capitalize">{activeSession.state.replace('_', ' ')}</span>
           </p>
           <p className="text-gray-400">Wait for the instructor to open the bidding phase.</p>
         </div>
@@ -273,7 +290,7 @@ const Bidding: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-white">Annual Bidding</h1>
           <p className="text-gray-400">
-            Submit bids for Year {currentSession.current_year} • All Load Periods
+            Submit bids for Year {activeSession.current_year} • All Load Periods
           </p>
         </div>
         
@@ -330,7 +347,7 @@ const Bidding: React.FC = () => {
       {/* Existing Bids Summary */}
       {existingBids && existingBids.length > 0 && (
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold text-white mb-4">Submitted Bids for Year {currentSession.current_year}</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Submitted Bids for Year {activeSession.current_year}</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -573,7 +590,7 @@ const Bidding: React.FC = () => {
                       <span className="text-gray-400">Carbon Cost:</span>
                       <span className="text-yellow-400">
                         ${(getPlantEmissions(operatingPlants.find(p => p.id === selectedPlant)?.plant_type || '') * 
-                          (currentSession?.carbon_price_per_ton || 0)).toFixed(2)}/MWh
+                          (activeSession?.carbon_price_per_ton || 0)).toFixed(2)}/MWh
                       </span>
                     </div>
                     <div className="flex justify-between border-t border-gray-600 pt-2">
@@ -626,15 +643,48 @@ const Bidding: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-gray-400">Year:</span>
-                    <span className="text-white ml-2">{currentSession.current_year}</span>
+                    <span className="text-white ml-2">{activeSession.current_year}</span>
                   </div>
                   <div>
                     <span className="text-gray-400">Carbon Price:</span>
-                    <span className="text-yellow-400 ml-2">${currentSession.carbon_price_per_ton}/ton</span>
+                    <span className="text-yellow-400 ml-2">${activeSession.carbon_price_per_ton}/ton</span>
                   </div>
                 </div>
               </div>
 
               {fuelPrices && (
                 <div className="bg-gray-700 rounded-lg p-4">
-                  <h4 className="font-medium text-white mb-3 flex items
+                  <h4 className="font-medium text-white mb-3 flex items-center">
+                    <FireIcon className="w-4 h-4 mr-2" />
+                    Fuel Prices
+                  </h4>
+                  <div className="space-y-2 text-sm">
+                    {Object.entries(fuelPrices.fuel_prices).map(([fuel, price]) => (
+                      <div key={fuel} className="flex justify-between">
+                        <span className="text-gray-400 capitalize">{fuel.replace('_', ' ')}:</span>
+                        <span className="text-white">${(price as number).toFixed(2)}/MMBtu</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
+                <h4 className="font-medium text-blue-300 mb-2">Bidding Tips</h4>
+                <ul className="text-sm text-gray-300 space-y-1">
+                  <li>• Price competitively but above marginal cost</li>
+                  <li>• Peak periods typically have higher clearing prices</li>
+                  <li>• Consider your competitors' likely strategies</li>
+                  <li>• Renewable plants often bid at $0-10/MWh</li>
+                  <li>• Storage can provide grid services at premium prices</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Bidding;
