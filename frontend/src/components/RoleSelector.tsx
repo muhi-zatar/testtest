@@ -17,6 +17,12 @@ const RoleSelector: React.FC = () => {
   const handleUtilityLogin = () => {
     setRole('utility');
     setUtilityId(selectedUtility);
+    
+    // Force refresh of all queries when switching to utility mode
+    setTimeout(() => {
+      window.location.reload();
+    }, 100);
+    
     navigate(`/utility/${selectedUtility}`);
   };
 

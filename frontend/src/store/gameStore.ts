@@ -115,7 +115,11 @@ export const useGameStore = create<GameStore>()(
 
       // Actions
       setRole: (role) => set({ role }),
-      setUtilityId: (utilityId) => set({ utilityId }),
+      setUtilityId: (utilityId) => {
+        set({ utilityId });
+        // Clear cached data when switching utilities
+        set({ plants: [], bids: [], financials: null });
+      },
       setCurrentSession: (currentSession) => set({ currentSession }),
       setMarketResults: (marketResults) => set({ marketResults }),
       setFuelPrices: (fuelPrices) => set({ fuelPrices }),

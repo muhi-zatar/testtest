@@ -56,6 +56,7 @@ const Portfolio: React.FC = () => {
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getPowerPlants(currentSession.id, utilityId) : null,
     enabled: !!utilityId && !!currentSession,
+    refetchInterval: 5000, // Add refetch interval
   });
 
   // Get utility financial data
@@ -64,6 +65,7 @@ const Portfolio: React.FC = () => {
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getUserFinancials(utilityId, currentSession.id) : null,
     enabled: !!utilityId && !!currentSession,
+    refetchInterval: 5000,
   });
 
   // Get fuel prices for cost calculations

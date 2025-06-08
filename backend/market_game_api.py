@@ -385,6 +385,22 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+# Add endpoint to get all users
+@app.get("/users")
+async def get_all_users(db: Session = Depends(get_db)):
+    users = db.query(DBUser).all()
+    return [
+        {
+            "id": user.id,
+            "username": user.username,
+            "user_type": user.user_type,
+            "budget": user.budget,
+            "debt": user.debt,
+            "equity": user.equity,
+            "created_at": user.created_at.isoformat()
+        } for user in users
+    ]
+
 @app.get("/users/{user_id}")
 async def get_user(user_id: str, db: Session = Depends(get_db)):
     user = db.query(DBUser).filter(DBUser.id == user_id).first()

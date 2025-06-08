@@ -230,7 +230,22 @@ export class ElectricityMarketAPI {
 
   // Portfolio and Financial Management
   static async getAllUtilities(sessionId: string) {
-    const response = await api.get(`/game-sessions/${sessionId}/utilities`);
+    try {
+      const response = await api.get(`/game-sessions/${sessionId}/utilities`);
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        // If endpoint doesn't exist, try getting all users and filter
+        console.log('Fallback: Getting all users and filtering utilities');
+        const usersResponse = await api.get('/users');
+        return usersResponse.data.filter((user: any) => user.user_type === 'utility');
+      }
+      throw error;
+    }
+  }
+
+  static async getAllUsers() {
+    const response = await api.get('/users');
     return response.data;
   }
 

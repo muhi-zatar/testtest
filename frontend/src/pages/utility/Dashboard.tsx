@@ -38,7 +38,7 @@ const UtilityDashboard: React.FC = () => {
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getUserFinancials(utilityId, currentSession.id) : null,
     enabled: !!utilityId && !!currentSession,
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
 
   // Get utility plants
@@ -47,6 +47,7 @@ const UtilityDashboard: React.FC = () => {
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getPowerPlants(currentSession.id, utilityId) : null,
     enabled: !!utilityId && !!currentSession,
+    refetchInterval: 5000,
   });
 
   // Get market results for performance tracking

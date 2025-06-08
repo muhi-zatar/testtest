@@ -23,7 +23,7 @@ const UtilityLayout: React.FC = () => {
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getUserFinancials(utilityId, currentSession.id) : null,
     enabled: !!utilityId && !!currentSession,
-    refetchInterval: 10000, // Refresh every 10 seconds
+    refetchInterval: 5000, // Refresh every 5 seconds
   });
 
   // Get utility plants
@@ -32,6 +32,7 @@ const UtilityLayout: React.FC = () => {
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getPowerPlants(currentSession.id, utilityId) : null,
     enabled: !!utilityId && !!currentSession,
+    refetchInterval: 5000, // Add refetch interval
   });
 
   const navigation = [
