@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { 
   ChartBarIcon,
@@ -32,38 +33,55 @@ const UtilityDashboard: React.FC = () => {
   const { utilityId } = useParams<{ utilityId: string }>();
   const { currentSession } = useGameStore();
 
+  // Get fresh session data with frequent updates
+  const { data: sessionData } = useQuery({
+    queryKey: ['game-session', currentSession?.id],
+    queryFn: () => currentSession ? ElectricityMarketAPI.getGameSession(currentSession.id) : null,
+    enabled: !!currentSession,
+    refetchInterval: 5000, // Check every 5 seconds for state changes
+    onSuccess: (data) => {
+      if (data && data.state !== currentSession?.state) {
+        console.log('🔄 Game state updated in dashboard:', data.state);
+        setCurrentSession(data);
+      }
+    }
+  });
+
+  // Use the most up-to-date session data
+  const activeSession = sessionData || currentSession;
+
   // Get utility financial data
   const { data: financials, isLoading: financialsLoading } = useQuery({
-    queryKey: ['utility-financials', utilityId, currentSession?.id],
+    queryKey: ['utility-financials', utilityId, activeSession?.id],
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getUserFinancials(utilityId, currentSession.id) : null,
-    enabled: !!utilityId && !!currentSession,
+    enabled: !!utilityId && !!activeSession,
     refetchInterval: 5000,
   });
 
   // Get utility plants
   const { data: plants, isLoading: plantsLoading } = useQuery({
-    queryKey: ['utility-plants', utilityId, currentSession?.id],
+    queryKey: ['utility-plants', utilityId, activeSession?.id],
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getPowerPlants(currentSession.id, utilityId) : null,
-    enabled: !!utilityId && !!currentSession,
+    enabled: !!utilityId && !!activeSession,
     refetchInterval: 5000,
   });
 
   // Get market results for performance tracking
   const { data: marketResults } = useQuery({
-    queryKey: ['market-results', currentSession?.id],
+    queryKey: ['market-results', activeSession?.id],
     queryFn: () => currentSession ? 
       ElectricityMarketAPI.getMarketResults(currentSession.id) : null,
-    enabled: !!currentSession,
+    enabled: !!activeSession,
   });
 
   // Get fuel prices for current year
   const { data: fuelPrices } = useQuery({
-    queryKey: ['fuel-prices', currentSession?.id, currentSession?.current_year],
+    queryKey: ['fuel-prices', activeSession?.id, activeSession?.current_year],
     queryFn: () => currentSession ? 
       ElectricityMarketAPI.getFuelPrices(currentSession.id, currentSession.current_year) : null,
-    enabled: !!currentSession,
+    enabled: !!activeSession,
   });
 
   // Calculate portfolio metrics
@@ -113,7 +131,7 @@ const UtilityDashboard: React.FC = () => {
     );
   }
 
-  if (!currentSession) {
+  if (!activeSession) {
     return (
       <div className="p-6">
         <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-6 text-center">
@@ -125,6 +143,58 @@ const UtilityDashboard: React.FC = () => {
     );
   }
 
+  // Get state-specific styling and messages
+  const getStateInfo = (state: string) => {
+    switch (state) {
+      case 'bidding_open':
+        return {
+          color: 'text-green-400',
+          bgColor: 'bg-green-900/20',
+          borderColor: 'border-green-700',
+          icon: '📝',
+          message: 'Bidding is open! Submit your bids for all load periods.',
+          action: 'Go to Bidding'
+        };
+      case 'year_planning':
+        return {
+          color: 'text-blue-400',
+          bgColor: 'bg-blue-900/20',
+          borderColor: 'border-blue-700',
+          icon: '📋',
+          message: 'Year planning phase - Review market conditions and plan investments.',
+          action: 'Review Portfolio'
+        };
+      case 'market_clearing':
+        return {
+          color: 'text-yellow-400',
+          bgColor: 'bg-yellow-900/20',
+          borderColor: 'border-yellow-700',
+          icon: '⚡',
+          message: 'Markets are clearing - Results will be available soon.',
+          action: 'View Analysis'
+        };
+      case 'year_complete':
+        return {
+          color: 'text-purple-400',
+          bgColor: 'bg-purple-900/20',
+          borderColor: 'border-purple-700',
+          icon: '✅',
+          message: 'Year completed - Review your performance and prepare for next year.',
+          action: 'View Results'
+        };
+      default:
+        return {
+          color: 'text-gray-400',
+          bgColor: 'bg-gray-700/20',
+          borderColor: 'border-gray-600',
+          icon: '⏳',
+          message: 'Game in progress...',
+          action: 'Dashboard'
+        };
+    }
+  };
+
+  const stateInfo = getStateInfo(activeSession.state);
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -134,18 +204,41 @@ const UtilityDashboard: React.FC = () => {
             {utilityId?.replace('_', ' ').toUpperCase()} Dashboard
           </h1>
           <p className="text-gray-400">
-            Year {currentSession.current_year} • Strategic Portfolio Management
+            Year {activeSession.current_year} • Strategic Portfolio Management
           </p>
         </div>
         
         <div className="text-right">
           <p className="text-sm text-gray-400">Market State</p>
-          <p className="text-lg font-semibold text-green-400 capitalize">
-            {currentSession.state.replace('_', ' ')}
+          <p className={`text-lg font-semibold capitalize ${stateInfo.color}`}>
+            {activeSession.state.replace('_', ' ')}
           </p>
         </div>
       </div>
 
+      {/* Game State Alert */}
+      <div className={`rounded-lg p-4 border ${stateInfo.bgColor} ${stateInfo.borderColor}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <span className="text-2xl">{stateInfo.icon}</span>
+            <div>
+              <h3 className={`font-semibold ${stateInfo.color}`}>
+                {activeSession.state.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+              </h3>
+              <p className="text-gray-300 text-sm">{stateInfo.message}</p>
+            </div>
+          </div>
+          
+          {activeSession.state === 'bidding_open' && (
+            <Link
+              to={`/utility/${utilityId}/bidding`}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              {stateInfo.action}
+            </Link>
+          )}
+        </div>
+      </div>
       {/* Key Performance Indicators */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
@@ -497,11 +590,11 @@ const UtilityDashboard: React.FC = () => {
             <div className="mt-6 p-4 bg-blue-900/30 rounded-lg">
               <h4 className="font-medium text-white mb-2">🎯 Current Year Focus</h4>
               <p className="text-sm text-gray-300">
-                Year {currentSession.current_year}: {currentSession.state === 'year_planning' ? 
+                Year {activeSession.current_year}: {activeSession.state === 'year_planning' ? 
                   'Review market conditions and plan investments for the year ahead.' :
-                  currentSession.state === 'bidding_open' ? 
+                  activeSession.state === 'bidding_open' ? 
                   'Submit competitive bids for all load periods to maximize revenue.' :
-                  currentSession.state === 'market_clearing' ? 
+                  activeSession.state === 'market_clearing' ? 
                   'Markets are clearing - results will be available soon.' :
                   'Analyze your performance and prepare strategy for next year.'
                 }
