@@ -296,7 +296,7 @@ const InstructorDashboard: React.FC = () => {
           <h3 className="text-lg font-semibold text-white mb-4">Generation Capacity Mix</h3>
           <div className="h-64 flex items-center justify-center">
             {capacityMixData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%\" height="100%">
                 <PieChart>
                   <Pie
                     data={capacityMixData}
