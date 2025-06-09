@@ -102,8 +102,9 @@ class YearlyGameFlowManager:
             if not session:
                 raise ValueError("Game session not found")
             
-            session.state = GameStateEnum.year_planning
+            # Update the current year and state
             session.current_year = year
+            session.state = GameStateEnum.year_planning
             self.db.commit()
             
             # Generate market events for this year
@@ -141,6 +142,13 @@ class YearlyGameFlowManager:
             DBGameSession.id == self.game_session_id
         ).first()
         
+        if not session:
+            raise ValueError("Game session not found")
+        
+        # Update the current year if needed
+        if session.current_year != year:
+            session.current_year = year
+        
         session.state = GameStateEnum.bidding_open
         self.db.commit()
         
@@ -174,6 +182,13 @@ class YearlyGameFlowManager:
             DBGameSession.id == self.game_session_id
         ).first()
         
+        if not session:
+            raise ValueError("Game session not found")
+        
+        # Check if we're in the right state to clear markets
+        if session.state != GameStateEnum.bidding_open:
+            raise ValueError(f"Cannot clear markets in state: {session.state}. Markets must be in bidding_open state.")
+        
         # Get demand profile and fuel prices
         demand_data = json.loads(session.demand_profile)
         fuel_prices_data = json.loads(session.fuel_prices)
@@ -193,7 +208,28 @@ class YearlyGameFlowManager:
         ).all()
         
         if not db_bids:
-            raise ValueError(f"No bids found for year {year}")
+            # Instead of raising an error, return a message indicating no bids
+            session.state = GameStateEnum.year_complete
+            self.db.commit()
+            
+            return {
+                "status": "no_bids_submitted",
+                "year": year,
+                "message": f"No bids were submitted for year {year}. Markets cannot clear without bids.",
+                "results": {},
+                "summary": {
+                    "total_market_revenue": 0,
+                    "average_price_weighted": 0,
+                    "capacity_utilization": 0,
+                    "renewable_penetration": 0
+                },
+                "utility_performance": {},
+                "market_insights": [
+                    "No market activity occurred this year due to lack of bids",
+                    "Utilities should submit bids during the bidding phase",
+                    "Consider reviewing bidding strategies for future years"
+                ]
+            }
         
         # Convert to domain objects
         yearly_bids = [
