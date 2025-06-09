@@ -14,7 +14,8 @@ import {
   CalendarIcon,
   UserGroupIcon,
   ArrowTrendingUpIcon,
-  ArrowTrendingDownIcon
+  ArrowTrendingDownIcon,
+  CogIcon
 } from '@heroicons/react/24/outline';
 import { 
   LineChart, 
@@ -40,47 +41,11 @@ import {
 import ElectricityMarketAPI from '../../api/client';
 import { useGameStore } from '../../store/gameStore';
 
-interface YearlyAnalytics {
-  year: number;
-  market_data: {
-    total_energy: number;
-    average_price: number;
-    peak_price: number;
-    off_peak_price: number;
-    shoulder_price: number;
-    total_revenue: number;
-    capacity_utilization: number;
-    renewable_penetration: number;
-  };
-  utility_performance: Array<{
-    utility_id: string;
-    utility_name: string;
-    revenue: number;
-    capacity: number;
-    plants: number;
-    market_share: number;
-    profit_margin: number;
-  }>;
-  investments: Array<{
-    utility_id: string;
-    plant_name: string;
-    plant_type: string;
-    capacity_mw: number;
-    investment_amount: number;
-  }>;
-  market_events: Array<{
-    type: string;
-    description: string;
-    impact: string;
-  }>;
-}
-
 const Analytics: React.FC = () => {
   const { currentSession } = useGameStore();
   
   const [selectedYear, setSelectedYear] = useState<number>(currentSession?.current_year || 2025);
   const [viewMode, setViewMode] = useState<'overview' | 'market' | 'utilities' | 'investments' | 'events'>('overview');
-  const [timeRange, setTimeRange] = useState<'all' | 'recent'>('all');
 
   // Get multi-year analysis data
   const { data: multiYearData, isLoading: multiYearLoading } = useQuery({
@@ -118,14 +83,14 @@ const Analytics: React.FC = () => {
     
     return Object.entries(multiYearData.yearly_data).map(([year, data]: [string, any]) => ({
       year: parseInt(year),
-      avgPrice: data.average_price || 0,
+      avgPrice: data.average_price || 50,
       totalEnergy: (data.total_energy || 0) / 1000000, // Convert to TWh
       renewablePct: (data.renewable_penetration || 0) * 100,
       capacityUtil: (data.capacity_utilization || 0) * 100,
-      marketValue: ((data.average_price || 0) * (data.total_energy || 0)) / 1000000000, // Billions
-      peakPrice: (data.peak_price || data.average_price || 0),
-      offPeakPrice: (data.off_peak_price || data.average_price || 0),
-      priceVolatility: Math.abs((data.peak_price || 0) - (data.off_peak_price || 0)),
+      marketValue: ((data.average_price || 50) * (data.total_energy || 0)) / 1000000000, // Billions
+      peakPrice: (data.peak_price || data.average_price || 50),
+      offPeakPrice: (data.off_peak_price || data.average_price || 50),
+      priceVolatility: Math.abs((data.peak_price || 50) - (data.off_peak_price || 50)),
     }));
   }, [multiYearData]);
 
@@ -157,7 +122,7 @@ const Analytics: React.FC = () => {
     if (Math.abs(priceChange.change) > 10) {
       insights.push({
         type: priceChange.trend === 'up' ? 'warning' : 'positive',
-        icon: priceChange.trend === 'up' ? TrendingUpIcon : TrendingDownIcon,
+        icon: priceChange.trend === 'up' ? ArrowTrendingUpIcon : ArrowTrendingDownIcon,
         title: `Electricity Prices ${priceChange.trend === 'up' ? 'Rising' : 'Falling'} Rapidly`,
         description: `Average prices ${priceChange.change > 0 ? 'increased' : 'decreased'} by ${Math.abs(priceChange.change).toFixed(1)}% year-over-year`,
         impact: priceChange.trend === 'up' ? 'Higher costs for consumers, increased utility revenues' : 'Lower costs for consumers, pressure on utility margins'
@@ -168,7 +133,7 @@ const Analytics: React.FC = () => {
     if (renewableChange.change > 5) {
       insights.push({
         type: 'positive',
-        icon: TrendingUpIcon,
+        icon: ArrowTrendingUpIcon,
         title: 'Renewable Energy Expansion',
         description: `Renewable penetration increased by ${renewableChange.change.toFixed(1)}% to ${latest.renewablePct.toFixed(1)}%`,
         impact: 'Reduced carbon emissions, increased grid flexibility needs'
