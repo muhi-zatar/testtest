@@ -31,7 +31,7 @@ import { useGameStore } from '../../store/gameStore';
 
 const UtilityDashboard: React.FC = () => {
   const { utilityId } = useParams<{ utilityId: string }>();
-  const { currentSession } = useGameStore();
+  const { currentSession, setCurrentSession } = useGameStore();
 
   // Get fresh session data with frequent updates
   const { data: sessionData } = useQuery({
@@ -68,12 +68,13 @@ const UtilityDashboard: React.FC = () => {
     refetchInterval: 5000,
   });
 
-  // Get market results for performance tracking
+  // Get market results for performance tracking - with more frequent updates
   const { data: marketResults } = useQuery({
     queryKey: ['market-results', activeSession?.id],
     queryFn: () => currentSession ? 
       ElectricityMarketAPI.getMarketResults(currentSession.id) : null,
     enabled: !!activeSession,
+    refetchInterval: 3000, // More frequent refresh for market results
   });
 
   // Get fuel prices for current year
@@ -82,6 +83,15 @@ const UtilityDashboard: React.FC = () => {
     queryFn: () => currentSession ? 
       ElectricityMarketAPI.getFuelPrices(currentSession.id, currentSession.current_year) : null,
     enabled: !!activeSession,
+  });
+
+  // Get utility bids to check if they have results
+  const { data: utilityBids } = useQuery({
+    queryKey: ['utility-bids', utilityId, activeSession?.id, activeSession?.current_year],
+    queryFn: () => utilityId && currentSession ? 
+      ElectricityMarketAPI.getYearlyBids(currentSession.id, currentSession.current_year, utilityId) : null,
+    enabled: !!utilityId && !!activeSession,
+    refetchInterval: 3000,
   });
 
   // Calculate portfolio metrics
@@ -110,8 +120,57 @@ const UtilityDashboard: React.FC = () => {
   const utilizationRate = operatingPlants.length > 0 ? 
     (operatingPlants.reduce((sum, plant) => sum + plant.capacity_factor, 0) / operatingPlants.length) : 0;
 
-  // Recent performance data (mock for now)
-  const performanceData = [
+  // Calculate utility's market performance from results
+  const utilityMarketPerformance = React.useMemo(() => {
+    if (!marketResults || !utilityBids || utilityBids.length === 0) return null;
+    
+    let totalRevenue = 0;
+    let totalEnergy = 0;
+    let acceptedBids = 0;
+    
+    marketResults.forEach((result: any) => {
+      // Check if this utility had accepted bids in this result
+      if (result.accepted_supply_bids && result.accepted_supply_bids.length > 0) {
+        utilityBids.forEach((bid: any) => {
+          if (result.accepted_supply_bids.includes(bid.id)) {
+            // Calculate revenue for this bid
+            let quantity = 0;
+            let hours = 0;
+            
+            if (result.period === 'off_peak') {
+              quantity = bid.off_peak_quantity;
+              hours = 5000;
+            } else if (result.period === 'shoulder') {
+              quantity = bid.shoulder_quantity;
+              hours = 2500;
+            } else if (result.period === 'peak') {
+              quantity = bid.peak_quantity;
+              hours = 1260;
+            }
+            
+            const energy = quantity * hours;
+            const revenue = energy * result.clearing_price;
+            
+            totalRevenue += revenue;
+            totalEnergy += energy;
+            acceptedBids++;
+          }
+        });
+      }
+    });
+    
+    return {
+      totalRevenue: totalRevenue / 1000000, // Convert to millions
+      totalEnergy: totalEnergy / 1000, // Convert to GWh
+      acceptedBids,
+      avgPrice: totalEnergy > 0 ? totalRevenue / totalEnergy : 0
+    };
+  }, [marketResults, utilityBids]);
+
+  // Recent performance data - use real market data if available
+  const performanceData = utilityMarketPerformance ? [
+    { month: 'Current', revenue: utilityMarketPerformance.totalRevenue, costs: (financials?.annual_fixed_costs || 0) / 1e6 / 12, profit: utilityMarketPerformance.totalRevenue - ((financials?.annual_fixed_costs || 0) / 1e6 / 12) },
+  ] : [
     { month: 'Jan', revenue: 45, costs: 32, profit: 13 },
     { month: 'Feb', revenue: 52, costs: 35, profit: 17 },
     { month: 'Mar', revenue: 48, costs: 33, profit: 15 },
@@ -239,6 +298,22 @@ const UtilityDashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Market Results Alert */}
+      {marketResults && marketResults.length > 0 && utilityMarketPerformance && (
+        <div className="bg-green-900/20 border border-green-700 rounded-lg p-4">
+          <div className="flex items-center space-x-3">
+            <span className="text-2xl">💰</span>
+            <div>
+              <h3 className="font-semibold text-green-300">Market Results Available!</h3>
+              <p className="text-gray-300 text-sm">
+                Your bids generated ${utilityMarketPerformance.totalRevenue.toFixed(1)}M in revenue from {utilityMarketPerformance.totalEnergy.toFixed(0)} GWh of energy sales.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Key Performance Indicators */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
@@ -289,15 +364,15 @@ const UtilityDashboard: React.FC = () => {
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Debt/Equity Ratio</p>
+              <p className="text-sm text-gray-400">Market Revenue</p>
               <p className="text-2xl font-bold text-white">
-                {debtToEquity.toFixed(2)}
+                ${utilityMarketPerformance ? utilityMarketPerformance.totalRevenue.toFixed(1) : '0'}M
               </p>
-              <p className={`text-sm ${debtToEquity > 2 ? 'text-red-400' : debtToEquity > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
-                {debtToEquity < 1 ? 'Conservative' : debtToEquity < 2 ? 'Moderate' : 'Aggressive'}
+              <p className={`text-sm ${utilityMarketPerformance ? 'text-green-400' : 'text-gray-400'}`}>
+                {utilityMarketPerformance ? 'From accepted bids' : 'No results yet'}
               </p>
             </div>
-            <div className={`p-3 rounded-lg ${debtToEquity > 2 ? 'bg-red-600' : debtToEquity > 1 ? 'bg-yellow-600' : 'bg-green-600'}`}>
+            <div className={`p-3 rounded-lg ${utilityMarketPerformance ? 'bg-green-600' : 'bg-gray-600'}`}>
               <ArrowTrendingUpIcon className="w-6 h-6 text-white" />
             </div>
           </div>
@@ -342,10 +417,10 @@ const UtilityDashboard: React.FC = () => {
 
         {/* Financial Performance */}
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold text-white mb-4">Financial Performance Trend</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Financial Performance</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={performanceData}>
+              <BarChart data={performanceData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis dataKey="month" stroke="#9CA3AF" />
                 <YAxis stroke="#9CA3AF" />
@@ -355,16 +430,45 @@ const UtilityDashboard: React.FC = () => {
                     border: '1px solid #374151',
                     borderRadius: '8px'
                   }}
-                  formatter={(value: number) => [`$${value}M`, '']}
+                  formatter={(value: number) => [`$${value.toFixed(1)}M`, '']}
                 />
-                <Line type="monotone" dataKey="revenue" stroke="#10B981" strokeWidth={2} name="Revenue" />
-                <Line type="monotone" dataKey="costs" stroke="#EF4444" strokeWidth={2} name="Costs" />
-                <Line type="monotone" dataKey="profit" stroke="#3B82F6" strokeWidth={2} name="Profit" />
-              </LineChart>
+                <Bar dataKey="revenue" fill="#10B981" name="Revenue" />
+                <Bar dataKey="costs" fill="#EF4444" name="Costs" />
+                <Bar dataKey="profit" fill="#3B82F6" name="Profit" />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       </div>
+
+      {/* Market Results Summary */}
+      {utilityMarketPerformance && (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h3 className="text-lg font-semibold text-white mb-4">Your Market Performance</h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="bg-gray-700 rounded-lg p-4">
+              <h4 className="font-medium text-white mb-2">Total Revenue</h4>
+              <p className="text-2xl font-bold text-green-400">${utilityMarketPerformance.totalRevenue.toFixed(1)}M</p>
+              <p className="text-sm text-gray-400">From accepted bids</p>
+            </div>
+            <div className="bg-gray-700 rounded-lg p-4">
+              <h4 className="font-medium text-white mb-2">Energy Sold</h4>
+              <p className="text-2xl font-bold text-blue-400">{utilityMarketPerformance.totalEnergy.toFixed(0)} GWh</p>
+              <p className="text-sm text-gray-400">Total generation</p>
+            </div>
+            <div className="bg-gray-700 rounded-lg p-4">
+              <h4 className="font-medium text-white mb-2">Accepted Bids</h4>
+              <p className="text-2xl font-bold text-purple-400">{utilityMarketPerformance.acceptedBids}</p>
+              <p className="text-sm text-gray-400">Out of {utilityBids?.length || 0} submitted</p>
+            </div>
+            <div className="bg-gray-700 rounded-lg p-4">
+              <h4 className="font-medium text-white mb-2">Avg Price</h4>
+              <p className="text-2xl font-bold text-yellow-400">${utilityMarketPerformance.avgPrice.toFixed(2)}/MWh</p>
+              <p className="text-sm text-gray-400">Weighted average</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Plant Status and Market Info */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -457,18 +561,18 @@ const UtilityDashboard: React.FC = () => {
             <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
               <h4 className="font-medium text-blue-300 mb-3">Quick Actions</h4>
               <div className="space-y-2">
-                <button className="w-full text-left text-sm text-gray-300 hover:text-white transition-colors">
+                <Link to={`/utility/${utilityId}/portfolio`} className="block w-full text-left text-sm text-gray-300 hover:text-white transition-colors">
                   → View detailed plant portfolio
-                </button>
-                <button className="w-full text-left text-sm text-gray-300 hover:text-white transition-colors">
+                </Link>
+                <Link to={`/utility/${utilityId}/investment`} className="block w-full text-left text-sm text-gray-300 hover:text-white transition-colors">
                   → Analyze investment opportunities
-                </button>
-                <button className="w-full text-left text-sm text-gray-300 hover:text-white transition-colors">
+                </Link>
+                <Link to={`/utility/${utilityId}/bidding`} className="block w-full text-left text-sm text-gray-300 hover:text-white transition-colors">
                   → Submit market bids
-                </button>
-                <button className="w-full text-left text-sm text-gray-300 hover:text-white transition-colors">
+                </Link>
+                <Link to={`/utility/${utilityId}/analysis`} className="block w-full text-left text-sm text-gray-300 hover:text-white transition-colors">
                   → Review market analysis
-                </button>
+                </Link>
               </div>
             </div>
           </div>
