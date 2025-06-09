@@ -1,265 +1,237 @@
 import React, { useState, useEffect } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
-  PlusIcon,
   CogIcon,
+  UserGroupIcon,
   PlayIcon,
-  DocumentDuplicateIcon,
-  TrashIcon,
-  PencilIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
-  ClockIcon,
-  BoltIcon,
   BuildingOffice2Icon,
+  BoltIcon,
   CurrencyDollarIcon,
-  FireIcon
+  ClockIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 import ElectricityMarketAPI from '../../api/client';
 import { useGameStore } from '../../store/gameStore';
 
-interface GameSessionConfig {
-  name: string;
-  start_year: number;
-  end_year: number;
-  carbon_price_per_ton: number;
-  demand_profile: {
-    off_peak_demand: number;
-    shoulder_demand: number;
-    peak_demand: number;
-    demand_growth_rate: number;
-  };
-  fuel_prices: Record<string, Record<string, number>>;
-  max_utilities: number;
-  market_volatility: 'low' | 'medium' | 'high';
-  regulatory_environment: 'stable' | 'changing' | 'strict';
-}
-
-interface GameScenario {
+interface PortfolioTemplate {
   id: string;
   name: string;
   description: string;
-  duration_years: number;
-  complexity: 'beginner' | 'intermediate' | 'advanced';
-  focus_areas: string[];
-  default_config: Partial<GameSessionConfig>;
+  plants: Array<{
+    plant_type: string;
+    capacity_mw: number;
+    name: string;
+  }>;
+}
+
+interface GameSetupData {
+  sessionName: string;
+  startYear: number;
+  endYear: number;
+  carbonPrice: number;
+  numberOfUtilities: number;
+  utilityNames: string[];
+  portfolioAssignments: Record<string, string>;
 }
 
 const GameSetup: React.FC = () => {
-  const { setCurrentSession } = useGameStore();
+  const { currentSession, setCurrentSession } = useGameStore();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'create' | 'scenarios' | 'manage'>('create');
-  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
-  
-  // Form state for new game creation
-  const [gameConfig, setGameConfig] = useState<GameSessionConfig>({
-    name: '',
-    start_year: 2025,
-    end_year: 2035,
-    carbon_price_per_ton: 50,
-    demand_profile: {
-      off_peak_demand: 2800,
-      shoulder_demand: 3200,
-      peak_demand: 3800,
-      demand_growth_rate: 0.021,
-    },
-    fuel_prices: {
-      '2025': { natural_gas: 3.5, coal: 2.1, uranium: 0.8 },
-      '2030': { natural_gas: 4.2, coal: 2.3, uranium: 0.9 },
-      '2035': { natural_gas: 4.8, coal: 2.5, uranium: 1.0 },
-    },
-    max_utilities: 4,
-    market_volatility: 'medium',
-    regulatory_environment: 'stable',
+  const [setupData, setSetupData] = useState<GameSetupData>({
+    sessionName: 'Electricity Market Simulation',
+    startYear: 2025,
+    endYear: 2035,
+    carbonPrice: 50,
+    numberOfUtilities: 3,
+    utilityNames: [],
+    portfolioAssignments: {}
   });
 
-  // Predefined scenarios
-  const predefinedScenarios: GameScenario[] = [
-    {
-      id: 'intro_tutorial',
-      name: 'Introduction Tutorial',
-      description: 'Basic 5-year simulation perfect for learning electricity market fundamentals',
-      duration_years: 5,
-      complexity: 'beginner',
-      focus_areas: ['Basic Bidding', 'Simple Investment', 'Merit Order'],
-      default_config: {
-        start_year: 2025,
-        end_year: 2030,
-        carbon_price_per_ton: 30,
-        max_utilities: 2,
-        market_volatility: 'low',
-        regulatory_environment: 'stable',
-      }
-    },
-    {
-      id: 'renewable_transition',
-      name: 'Renewable Energy Transition',
-      description: 'Navigate the clean energy transition with declining costs and policy support',
-      duration_years: 10,
-      complexity: 'intermediate',
-      focus_areas: ['Renewable Investment', 'Carbon Pricing', 'Storage Strategy'],
-      default_config: {
-        carbon_price_per_ton: 75,
-        market_volatility: 'medium',
-        regulatory_environment: 'changing',
-      }
-    },
-    {
-      id: 'capacity_crunch',
-      name: 'Capacity Shortage Crisis',
-      description: 'High demand growth with limited new capacity - strategic planning essential',
-      duration_years: 8,
-      complexity: 'advanced',
-      focus_areas: ['Capacity Planning', 'Peak Pricing', 'Financial Risk'],
-      default_config: {
-        demand_profile: {
-          off_peak_demand: 3200,
-          shoulder_demand: 3800,
-          peak_demand: 4500,
-          demand_growth_rate: 0.035,
-        },
-        carbon_price_per_ton: 100,
-        market_volatility: 'high',
-      }
-    },
-    {
-      id: 'deregulated_market',
-      name: 'Competitive Market Dynamics',
-      description: 'Intense competition with 6 utilities competing for market share',
-      duration_years: 10,
-      complexity: 'advanced',
-      focus_areas: ['Competition', 'Portfolio Optimization', 'Market Strategy'],
-      default_config: {
-        max_utilities: 6,
-        market_volatility: 'high',
-        regulatory_environment: 'stable',
-      }
-    },
-    {
-      id: 'climate_policy',
-      name: 'Aggressive Climate Policy',
-      description: 'Rapid decarbonization with high carbon prices and renewable mandates',
-      duration_years: 12,
-      complexity: 'advanced',
-      focus_areas: ['Decarbonization', 'Policy Compliance', 'Technology Transition'],
-      default_config: {
-        start_year: 2025,
-        end_year: 2037,
-        carbon_price_per_ton: 150,
-        regulatory_environment: 'strict',
-      }
-    },
-  ];
+  // Initialize utility names with unique identifiers
+  useEffect(() => {
+    if (setupData.utilityNames.length === 0) {
+      const sessionId = Date.now().toString().slice(-4);
+      const newNames = Array.from({ length: setupData.numberOfUtilities }, (_, i) => `Utility ${i + 1} (${sessionId})`);
+      setSetupData(prev => ({ ...prev, utilityNames: newNames }));
+    }
+  }, [setupData.numberOfUtilities, setupData.utilityNames.length]);
 
-  // Get existing game sessions
-  const { data: existingSessions, isLoading } = useQuery({
-    queryKey: ['game-sessions'],
-    queryFn: async () => {
-      // This would be a real API call to get all sessions
-      // For now, returning mock data
-      return [
-        {
-          id: 'sample_game_1',
-          name: 'Advanced Electricity Market Simulation 2025-2035',
-          start_year: 2025,
-          end_year: 2035,
-          current_year: 2025,
-          state: 'year_planning',
-          operator_id: 'operator_1',
-          participant_count: 3,
-          created_at: '2024-01-15',
-        }
-      ];
-    },
+  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [createdUtilities, setCreatedUtilities] = useState<Array<{id: string, username: string}>>([]);
+  const [gameSessionId, setGameSessionId] = useState<string>('');
+
+  // Get portfolio templates
+  const { data: portfolioTemplates, isLoading: templatesLoading } = useQuery({
+    queryKey: ['portfolio-templates'],
+    queryFn: ElectricityMarketAPI.getPortfolioTemplates,
+  });
+
+  // Get existing utilities for the current session
+  const { data: existingUtilities } = useQuery({
+    queryKey: ['game-utilities', currentSession?.id],
+    queryFn: () => currentSession ? ElectricityMarketAPI.getAllUtilities(currentSession.id) : null,
+    enabled: !!currentSession,
   });
 
   // Create game session mutation
-  const createGameMutation = useMutation({
-    mutationFn: (config: GameSessionConfig) => {
-      return ElectricityMarketAPI.createGameSession({
-        name: config.name,
-        operator_id: 'operator_1', // This would come from auth context
-        start_year: config.start_year,
-        end_year: config.end_year,
-        carbon_price_per_ton: config.carbon_price_per_ton,
-      });
-    },
+  const createSessionMutation = useMutation({
+    mutationFn: (sessionData: any) => ElectricityMarketAPI.createGameSession(sessionData),
     onSuccess: (data) => {
-      toast.success('Game session created successfully!');
+      setGameSessionId(data.id);
       setCurrentSession(data);
-      queryClient.invalidateQueries({ queryKey: ['game-sessions'] });
-      // Reset form
-      setGameConfig({
-        ...gameConfig,
-        name: '',
-      });
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to create game session');
-    }
-  });
-
-  // Create sample data mutation
-  const createSampleDataMutation = useMutation({
-    mutationFn: ElectricityMarketAPI.createSampleData,
-    onSuccess: () => {
-      toast.success('Sample data created successfully!');
-      queryClient.invalidateQueries({ queryKey: ['game-sessions'] });
+      toast.success('Game session created successfully!');
+      setCurrentStep(2);
     },
     onError: () => {
-      toast.error('Failed to create sample data');
+      toast.error('Failed to create game session');
     }
   });
 
-  const handleCreateGame = () => {
-    if (!gameConfig.name.trim()) {
-      toast.error('Please enter a game name');
-      return;
-    }
-    
-    if (gameConfig.end_year <= gameConfig.start_year) {
-      toast.error('End year must be after start year');
-      return;
-    }
-
-    createGameMutation.mutate(gameConfig);
-  };
-
-  const applyScenario = (scenario: GameScenario) => {
-    setGameConfig({
-      ...gameConfig,
-      name: scenario.name,
-      ...scenario.default_config,
-    });
-    setActiveTab('create');
-    toast.success(`Applied ${scenario.name} scenario template`);
-  };
-
-  const updateDemandProfile = (field: keyof GameSessionConfig['demand_profile'], value: number) => {
-    setGameConfig({
-      ...gameConfig,
-      demand_profile: {
-        ...gameConfig.demand_profile,
-        [field]: value,
+  // Create utilities mutation
+  const createUtilitiesMutation = useMutation({
+    mutationFn: async (utilityNames: string[]) => {
+      const utilities = [];
+      for (const name of utilityNames) {
+        // Create unique username by adding timestamp or session ID
+        const uniqueUsername = `${name.toLowerCase().replace(/\s+/g, '_')}_${Date.now().toString().slice(-6)}`;
+        const utility = await ElectricityMarketAPI.createUser({
+          username: uniqueUsername,
+          user_type: 'utility'
+        });
+        utilities.push(utility);
       }
+      return utilities;
+    },
+    onSuccess: (utilities) => {
+      setCreatedUtilities(utilities);
+      toast.success(`${utilities.length} utilities created successfully!`);
+      setCurrentStep(3);
+    },
+    onError: () => {
+      toast.error('Failed to create utilities');
+    }
+  });
+
+  // Assign portfolios mutation
+  const assignPortfoliosMutation = useMutation({
+    mutationFn: (assignments: Record<string, string>) => {
+      if (!gameSessionId) throw new Error('No game session');
+      return ElectricityMarketAPI.bulkAssignPortfolios(gameSessionId, assignments);
+    },
+    onSuccess: () => {
+      toast.success('Portfolios assigned successfully!');
+      setCurrentStep(4);
+      queryClient.invalidateQueries({ queryKey: ['game-utilities'] });
+    },
+    onError: () => {
+      toast.error('Failed to assign portfolios');
+    }
+  });
+
+  // Start game mutation
+  const startGameMutation = useMutation({
+    mutationFn: () => {
+      if (!gameSessionId) throw new Error('No game session');
+      return ElectricityMarketAPI.updateGameState(gameSessionId, 'year_planning');
+    },
+    onSuccess: () => {
+      toast.success('Game started! Year planning phase is now active.');
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+    onError: () => {
+      toast.error('Failed to start game');
+    }
+  });
+
+  // Load sample data mutation
+  const loadSampleDataMutation = useMutation({
+    mutationFn: ElectricityMarketAPI.createSampleData,
+    onSuccess: (data) => {
+      toast.success('Sample data loaded successfully!');
+      // Set the sample game as current session
+      ElectricityMarketAPI.getGameSession(data.game_session_id).then(session => {
+        setCurrentSession(session);
+        setGameSessionId(session.id);
+        setCurrentStep(4);
+      });
+    },
+    onError: () => {
+      toast.error('Failed to load sample data');
+    }
+  });
+
+  const handleUtilityCountChange = (count: number) => {
+    // Generate unique names for this session
+    const sessionId = Date.now().toString().slice(-4);
+    const newNames = Array.from({ length: count }, (_, i) => `Utility ${i + 1} (${sessionId})`);
+    setSetupData(prev => ({
+      ...prev,
+      numberOfUtilities: count,
+      utilityNames: newNames,
+      portfolioAssignments: {}
+    }));
+  };
+
+  const handleUtilityNameChange = (index: number, name: string) => {
+    setSetupData(prev => ({
+      ...prev,
+      utilityNames: prev.utilityNames.map((n, i) => i === index ? name : n)
+    }));
+  };
+
+  const handlePortfolioAssignment = (utilityId: string, templateId: string) => {
+    setSetupData(prev => ({
+      ...prev,
+      portfolioAssignments: {
+        ...prev.portfolioAssignments,
+        [utilityId]: templateId
+      }
+    }));
+  };
+
+  const handleCreateSession = () => {
+    createSessionMutation.mutate({
+      name: setupData.sessionName,
+      operator_id: 'operator_1', // Assuming instructor is operator_1
+      start_year: setupData.startYear,
+      end_year: setupData.endYear,
+      carbon_price_per_ton: setupData.carbonPrice
     });
   };
 
-  const updateFuelPrice = (year: string, fuel: string, price: number) => {
-    setGameConfig({
-      ...gameConfig,
-      fuel_prices: {
-        ...gameConfig.fuel_prices,
-        [year]: {
-          ...gameConfig.fuel_prices[year],
-          [fuel]: price,
-        }
-      }
-    });
+  const handleCreateUtilities = () => {
+    createUtilitiesMutation.mutate(setupData.utilityNames);
+  };
+
+  const handleAssignPortfolios = () => {
+    assignPortfoliosMutation.mutate(setupData.portfolioAssignments);
+  };
+
+  const handleStartGame = () => {
+    startGameMutation.mutate();
+  };
+
+  const handleLoadSampleData = () => {
+    loadSampleDataMutation.mutate();
+  };
+
+  const isStepComplete = (step: number): boolean => {
+    switch (step) {
+      case 1: return !!gameSessionId;
+      case 2: return createdUtilities.length > 0;
+      case 3: return Object.keys(setupData.portfolioAssignments).length === createdUtilities.length;
+      case 4: return true;
+      default: return false;
+    }
+  };
+
+  const canProceedToStep = (step: number): boolean => {
+    return step <= currentStep || isStepComplete(step - 1);
   };
 
   return (
@@ -268,706 +240,496 @@ const GameSetup: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-white">Game Setup</h1>
-          <p className="text-gray-400">Create and configure electricity market simulations</p>
+          <p className="text-gray-400">Configure and initialize a new electricity market simulation</p>
         </div>
         
         <button
-          onClick={() => createSampleDataMutation.mutate()}
-          disabled={createSampleDataMutation.isPending}
-          className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
+          onClick={handleLoadSampleData}
+          disabled={loadSampleDataMutation.isPending}
+          className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg"
         >
-          <DocumentDuplicateIcon className="w-4 h-4" />
-          <span>{createSampleDataMutation.isPending ? 'Creating...' : 'Create Sample Data'}</span>
+          {loadSampleDataMutation.isPending ? 'Loading...' : 'Load Sample Data'}
         </button>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700">
-        <div className="flex border-b border-gray-700">
-          {[
-            { id: 'create', name: 'Create New Game', icon: PlusIcon },
-            { id: 'scenarios', name: 'Scenario Templates', icon: DocumentDuplicateIcon },
-            { id: 'manage', name: 'Manage Sessions', icon: CogIcon },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center space-x-2 px-6 py-4 font-medium transition-colors ${
-                activeTab === tab.id
-                  ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-900/20'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
-              }`}
-            >
-              <tab.icon className="w-5 h-5" />
-              <span>{tab.name}</span>
-            </button>
+      {/* Progress Steps */}
+      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+        <div className="flex items-center justify-between mb-6">
+          {[1, 2, 3, 4].map((step) => (
+            <div key={step} className="flex items-center">
+              <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
+                currentStep >= step 
+                  ? 'bg-blue-600 border-blue-600 text-white' 
+                  : 'border-gray-600 text-gray-400'
+              }`}>
+                {isStepComplete(step) ? (
+                  <CheckCircleIcon className="w-6 h-6" />
+                ) : (
+                  <span>{step}</span>
+                )}
+              </div>
+              {step < 4 && (
+                <div className={`w-24 h-1 mx-4 ${
+                  currentStep > step ? 'bg-blue-600' : 'bg-gray-600'
+                }`} />
+              )}
+            </div>
           ))}
         </div>
+        
+        <div className="grid grid-cols-4 gap-4 text-center">
+          <div>
+            <h3 className="font-medium text-white">Session Setup</h3>
+            <p className="text-sm text-gray-400">Configure game parameters</p>
+          </div>
+          <div>
+            <h3 className="font-medium text-white">Create Utilities</h3>
+            <p className="text-sm text-gray-400">Add participating utilities</p>
+          </div>
+          <div>
+            <h3 className="font-medium text-white">Assign Portfolios</h3>
+            <p className="text-sm text-gray-400">Set initial plant portfolios</p>
+          </div>
+          <div>
+            <h3 className="font-medium text-white">Start Game</h3>
+            <p className="text-sm text-gray-400">Launch the simulation</p>
+          </div>
+        </div>
+      </div>
 
-        {/* Create New Game Tab */}
-        {activeTab === 'create' && (
-          <div className="p-6 space-y-6">
-            {/* Basic Configuration */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white">Basic Configuration</h3>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Game Name *
+      {/* Step 1: Session Configuration */}
+      {currentStep === 1 && (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h2 className="text-xl font-semibold text-white mb-6 flex items-center">
+            <CogIcon className="w-6 h-6 mr-2" />
+            Step 1: Session Configuration
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Session Name
+              </label>
+              <input
+                type="text"
+                value={setupData.sessionName}
+                onChange={(e) => setSetupData(prev => ({ ...prev, sessionName: e.target.value }))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Number of Utilities
+              </label>
+              <select
+                value={setupData.numberOfUtilities}
+                onChange={(e) => handleUtilityCountChange(Number(e.target.value))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+              >
+                <option value={2}>2 Utilities</option>
+                <option value={3}>3 Utilities</option>
+                <option value={4}>4 Utilities</option>
+                <option value={5}>5 Utilities</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Start Year
+              </label>
+              <input
+                type="number"
+                value={setupData.startYear}
+                onChange={(e) => setSetupData(prev => ({ ...prev, startYear: Number(e.target.value) }))}
+                min="2025"
+                max="2030"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                End Year
+              </label>
+              <input
+                type="number"
+                value={setupData.endYear}
+                onChange={(e) => setSetupData(prev => ({ ...prev, endYear: Number(e.target.value) }))}
+                min={setupData.startYear + 5}
+                max="2050"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Carbon Price ($/ton CO₂)
+              </label>
+              <input
+                type="number"
+                value={setupData.carbonPrice}
+                onChange={(e) => setSetupData(prev => ({ ...prev, carbonPrice: Number(e.target.value) }))}
+                min="0"
+                max="200"
+                step="5"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <h4 className="font-medium text-white mb-4">Utility Names</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {setupData.utilityNames.map((name, index) => (
+                <div key={index}>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Utility {index + 1}
                   </label>
                   <input
                     type="text"
-                    value={gameConfig.name}
-                    onChange={(e) => setGameConfig({ ...gameConfig, name: e.target.value })}
-                    placeholder="e.g., Spring 2024 Electricity Markets"
+                    value={name}
+                    onChange={(e) => handleUtilityNameChange(index, e.target.value)}
                     className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Start Year
-                    </label>
-                    <select
-                      value={gameConfig.start_year}
-                      onChange={(e) => setGameConfig({ ...gameConfig, start_year: Number(e.target.value) })}
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                    >
-                      {Array.from({ length: 10 }, (_, i) => {
-                        const year = 2025 + i;
-                        return <option key={year} value={year}>{year}</option>;
-                      })}
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      End Year
-                    </label>
-                    <select
-                      value={gameConfig.end_year}
-                      onChange={(e) => setGameConfig({ ...gameConfig, end_year: Number(e.target.value) })}
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                    >
-                      {Array.from({ length: 15 }, (_, i) => {
-                        const year = 2028 + i;
-                        return <option key={year} value={year}>{year}</option>;
-                      })}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Maximum Utilities
-                    </label>
-                    <select
-                      value={gameConfig.max_utilities}
-                      onChange={(e) => setGameConfig({ ...gameConfig, max_utilities: Number(e.target.value) })}
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                    >
-                      <option value={2}>2 Utilities</option>
-                      <option value={3}>3 Utilities</option>
-                      <option value={4}>4 Utilities</option>
-                      <option value={5}>5 Utilities</option>
-                      <option value={6}>6 Utilities</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Carbon Price ($/ton CO₂)
-                    </label>
-                    <input
-                      type="number"
-                      value={gameConfig.carbon_price_per_ton}
-                      onChange={(e) => setGameConfig({ ...gameConfig, carbon_price_per_ton: Number(e.target.value) })}
-                      min="0"
-                      max="200"
-                      step="5"
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Game Summary */}
-              <div className="bg-gray-700 rounded-lg p-4">
-                <h4 className="font-medium text-white mb-3">Game Summary</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400">Duration:</span>
-                    <span className="text-white">{gameConfig.end_year - gameConfig.start_year} years</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400">Simulation Period:</span>
-                    <span className="text-white">{gameConfig.start_year} - {gameConfig.end_year}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400">Market Participants:</span>
-                    <span className="text-white">{gameConfig.max_utilities} utilities</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400">Carbon Policy:</span>
-                    <span className="text-white">${gameConfig.carbon_price_per_ton}/ton CO₂</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400">Market Type:</span>
-                    <span className="text-white">Competitive Wholesale</span>
-                  </div>
-                </div>
-                
-                <div className="mt-4 pt-4 border-t border-gray-600">
-                  <h5 className="font-medium text-white mb-2">Learning Objectives</h5>
-                  <ul className="text-xs text-gray-300 space-y-1">
-                    <li>• Long-term capacity planning and investment decisions</li>
-                    <li>• Understanding electricity market merit order dispatch</li>
-                    <li>• Financial modeling and risk management</li>
-                    <li>• Technology portfolio optimization strategies</li>
-                    <li>• Competitive bidding and pricing strategies</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            {/* Advanced Configuration */}
-            <div>
-              <button
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex items-center space-x-2 text-blue-400 hover:text-blue-300 mb-4"
-              >
-                <CogIcon className="w-5 h-5" />
-                <span>{showAdvanced ? 'Hide' : 'Show'} Advanced Configuration</span>
-              </button>
-
-              {showAdvanced && (
-                <div className="space-y-6 bg-gray-700 rounded-lg p-6">
-                  {/* Demand Profile */}
-                  <div>
-                    <h4 className="font-medium text-white mb-4 flex items-center">
-                      <BoltIcon className="w-5 h-5 mr-2" />
-                      Demand Profile Configuration
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Off-Peak Demand (MW)
-                          </label>
-                          <input
-                            type="number"
-                            value={gameConfig.demand_profile.off_peak_demand}
-                            onChange={(e) => updateDemandProfile('off_peak_demand', Number(e.target.value))}
-                            min="1000"
-                            max="10000"
-                            step="100"
-                            className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                          />
-                          <p className="text-xs text-gray-400 mt-1">Night and weekend hours (5,000 hrs/year)</p>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Shoulder Demand (MW)
-                          </label>
-                          <input
-                            type="number"
-                            value={gameConfig.demand_profile.shoulder_demand}
-                            onChange={(e) => updateDemandProfile('shoulder_demand', Number(e.target.value))}
-                            min="1000"
-                            max="10000"
-                            step="100"
-                            className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                          />
-                          <p className="text-xs text-gray-400 mt-1">Daytime non-peak hours (2,500 hrs/year)</p>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Peak Demand (MW)
-                          </label>
-                          <input
-                            type="number"
-                            value={gameConfig.demand_profile.peak_demand}
-                            onChange={(e) => updateDemandProfile('peak_demand', Number(e.target.value))}
-                            min="1000"
-                            max="10000"
-                            step="100"
-                            className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                          />
-                          <p className="text-xs text-gray-400 mt-1">Evening high-demand hours (1,260 hrs/year)</p>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Annual Demand Growth Rate (%)
-                          </label>
-                          <input
-                            type="number"
-                            value={gameConfig.demand_profile.demand_growth_rate * 100}
-                            onChange={(e) => updateDemandProfile('demand_growth_rate', Number(e.target.value) / 100)}
-                            min="0"
-                            max="10"
-                            step="0.1"
-                            className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                          />
-                          <p className="text-xs text-gray-400 mt-1">Typical range: 1-3% annually</p>
-                        </div>
-                      </div>
-
-                      <div className="bg-gray-600 rounded-lg p-4">
-                        <h5 className="font-medium text-white mb-3">Demand Profile Analysis</h5>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Total Capacity Needed:</span>
-                            <span className="text-white font-medium">
-                              {gameConfig.demand_profile.peak_demand.toLocaleString()} MW
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Annual Energy Demand:</span>
-                            <span className="text-white font-medium">
-                              {(
-                                (gameConfig.demand_profile.off_peak_demand * 5000 +
-                                 gameConfig.demand_profile.shoulder_demand * 2500 +
-                                 gameConfig.demand_profile.peak_demand * 1260) / 1000000
-                              ).toFixed(1)} TWh
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Load Factor:</span>
-                            <span className="text-white font-medium">
-                              {(
-                                (gameConfig.demand_profile.off_peak_demand * 5000 +
-                                 gameConfig.demand_profile.shoulder_demand * 2500 +
-                                 gameConfig.demand_profile.peak_demand * 1260) /
-                                (gameConfig.demand_profile.peak_demand * 8760) * 100
-                              ).toFixed(1)}%
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Peak/Off-Peak Ratio:</span>
-                            <span className="text-white font-medium">
-                              {(gameConfig.demand_profile.peak_demand / gameConfig.demand_profile.off_peak_demand).toFixed(2)}x
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t border-gray-500">
-                          <h6 className="font-medium text-white mb-2">Market Implications</h6>
-                          <ul className="text-xs text-gray-300 space-y-1">
-                            <li>• Higher peak/off-peak ratio = more volatile pricing</li>
-                            <li>• Low load factor = greater need for peaking plants</li>
-                            <li>• High growth rate = more investment opportunities</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Fuel Price Configuration */}
-                  <div>
-                    <h4 className="font-medium text-white mb-4 flex items-center">
-                      <FireIcon className="w-5 h-5 mr-2" />
-                      Fuel Price Projections ($/MMBtu)
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {Object.entries(gameConfig.fuel_prices).map(([year, prices]) => (
-                        <div key={year} className="bg-gray-600 rounded-lg p-4">
-                          <h5 className="font-medium text-white mb-3 text-center">{year}</h5>
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block text-xs text-gray-300 mb-1">Natural Gas</label>
-                              <input
-                                type="number"
-                                value={prices.natural_gas}
-                                onChange={(e) => updateFuelPrice(year, 'natural_gas', Number(e.target.value))}
-                                min="1"
-                                max="15"
-                                step="0.1"
-                                className="w-full bg-gray-500 border border-gray-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-300 mb-1">Coal</label>
-                              <input
-                                type="number"
-                                value={prices.coal}
-                                onChange={(e) => updateFuelPrice(year, 'coal', Number(e.target.value))}
-                                min="1"
-                                max="10"
-                                step="0.1"
-                                className="w-full bg-gray-500 border border-gray-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-300 mb-1">Uranium</label>
-                              <input
-                                type="number"
-                                value={prices.uranium}
-                                onChange={(e) => updateFuelPrice(year, 'uranium', Number(e.target.value))}
-                                min="0.5"
-                                max="3"
-                                step="0.1"
-                                className="w-full bg-gray-500 border border-gray-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Market Environment */}
-                  <div>
-                    <h4 className="font-medium text-white mb-4">Market Environment</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Market Volatility
-                        </label>
-                        <select
-                          value={gameConfig.market_volatility}
-                          onChange={(e) => setGameConfig({ ...gameConfig, market_volatility: e.target.value as any })}
-                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                        >
-                          <option value="low">Low - Predictable market conditions</option>
-                          <option value="medium">Medium - Moderate price swings</option>
-                          <option value="high">High - Frequent market shocks</option>
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Regulatory Environment
-                        </label>
-                        <select
-                          value={gameConfig.regulatory_environment}
-                          onChange={(e) => setGameConfig({ ...gameConfig, regulatory_environment: e.target.value as any })}
-                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                        >
-                          <option value="stable">Stable - Predictable regulations</option>
-                          <option value="changing">Changing - Evolving policy landscape</option>
-                          <option value="strict">Strict - Aggressive environmental policies</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Create Game Button */}
-            <div className="flex justify-center pt-6">
-              <button
-                onClick={handleCreateGame}
-                disabled={createGameMutation.isPending || !gameConfig.name.trim()}
-                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-semibold px-8 py-3 rounded-lg flex items-center space-x-2 text-lg"
-              >
-                <PlayIcon className="w-6 h-6" />
-                <span>
-                  {createGameMutation.isPending ? 'Creating Game...' : 'Create Game Session'}
-                </span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Scenario Templates Tab */}
-        {activeTab === 'scenarios' && (
-          <div className="p-6">
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-white mb-2">Pre-configured Scenarios</h3>
-              <p className="text-gray-400">Ready-to-use templates for different learning objectives and complexity levels</p>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-              {predefinedScenarios.map((scenario) => (
-                <div key={scenario.id} className="bg-gray-700 rounded-lg p-6 border border-gray-600 hover:border-blue-500 transition-colors">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h4 className="font-semibold text-white mb-1">{scenario.name}</h4>
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        scenario.complexity === 'beginner' ? 'bg-green-900 text-green-300' :
-                        scenario.complexity === 'intermediate' ? 'bg-yellow-900 text-yellow-300' :
-                        'bg-red-900 text-red-300'
-                      }`}>
-                        {scenario.complexity.toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-400">Duration</p>
-                      <p className="text-white font-medium">{scenario.duration_years} years</p>
-                    </div>
-                  </div>
-
-                  <p className="text-gray-300 text-sm mb-4">{scenario.description}</p>
-
-                  <div className="mb-4">
-                    <h5 className="text-sm font-medium text-white mb-2">Focus Areas</h5>
-                    <div className="flex flex-wrap gap-1">
-                      {scenario.focus_areas.map((area) => (
-                        <span key={area} className="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded">
-                          {area}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="mb-4 text-sm space-y-1">
-                    {scenario.default_config.carbon_price_per_ton && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Carbon Price:</span>
-                        <span className="text-white">${scenario.default_config.carbon_price_per_ton}/ton</span>
-                      </div>
-                    )}
-                    {scenario.default_config.max_utilities && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Max Utilities:</span>
-                        <span className="text-white">{scenario.default_config.max_utilities}</span>
-                      </div>
-                    )}
-                    {scenario.default_config.market_volatility && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Volatility:</span>
-                        <span className="text-white capitalize">{scenario.default_config.market_volatility}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={() => applyScenario(scenario)}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-                  >
-                    Use This Scenario
-                  </button>
-                </div>
               ))}
             </div>
+          </div>
 
-            {/* Custom Scenario Creation */}
-            <div className="mt-8 bg-gradient-to-r from-purple-900/20 to-blue-900/20 border border-purple-700 rounded-lg p-6">
-              <div className="flex items-start space-x-3">
-                <InformationCircleIcon className="w-6 h-6 text-purple-400 mt-1" />
-                <div>
-                  <h3 className="text-lg font-semibold text-purple-300">Need a Custom Scenario?</h3>
-                  <p className="text-gray-300 mt-2 mb-4">
-                    These templates provide excellent starting points, but you can fully customize any scenario 
-                    in the "Create New Game" tab. Adjust demand profiles, fuel prices, market volatility, 
-                    and regulatory environments to match your specific learning objectives.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <h4 className="font-medium text-white mb-2">💡 Customization Options</h4>
-                      <ul className="text-gray-300 space-y-1">
-                        <li>• Adjust simulation duration (3-15 years)</li>
-                        <li>• Configure demand growth patterns</li>
-                        <li>• Set fuel price volatility scenarios</li>
-                        <li>• Choose carbon pricing policies</li>
-                        <li>• Control market competitiveness (2-6 utilities)</li>
-                      </ul>
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-white mb-2">🎯 Educational Focus</h4>
-                      <ul className="text-gray-300 space-y-1">
-                        <li>• Beginner: Basic market mechanics</li>
-                        <li>• Intermediate: Strategic planning</li>
-                        <li>• Advanced: Complex market dynamics</li>
-                        <li>• Research: Policy scenario analysis</li>
-                      </ul>
-                    </div>
+          <div className="mt-8 flex justify-end">
+            <button
+              onClick={handleCreateSession}
+              disabled={createSessionMutation.isPending || !setupData.sessionName}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg"
+            >
+              {createSessionMutation.isPending ? 'Creating...' : 'Create Session'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Create Utilities */}
+      {currentStep === 2 && (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h2 className="text-xl font-semibold text-white mb-6 flex items-center">
+            <UserGroupIcon className="w-6 h-6 mr-2" />
+            Step 2: Create Utilities
+          </h2>
+          
+          <div className="mb-6">
+            <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
+              <div className="flex items-center space-x-2 mb-2">
+                <InformationCircleIcon className="w-5 h-5 text-blue-400" />
+                <span className="font-medium text-blue-300">Utility Setup</span>
+              </div>
+              <p className="text-sm text-gray-300">
+                Each utility will be created with a $2B starting budget and can participate in the electricity market.
+                Utilities will compete by building plants, submitting bids, and optimizing their portfolios.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {setupData.utilityNames.map((name, index) => (
+              <div key={index} className="bg-gray-700 rounded-lg p-4">
+                <div className="flex items-center space-x-3">
+                  <BuildingOffice2Icon className="w-8 h-8 text-green-400" />
+                  <div>
+                    <h4 className="font-medium text-white">{name}</h4>
+                    <p className="text-sm text-gray-400">Starting Budget: $2.0B</p>
                   </div>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
-        )}
 
-        {/* Manage Sessions Tab */}
-        {activeTab === 'manage' && (
-          <div className="p-6">
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-white mb-2">Existing Game Sessions</h3>
-              <p className="text-gray-400">Monitor and manage your electricity market simulations</p>
+          <div className="flex justify-between">
+            <button
+              onClick={() => setCurrentStep(1)}
+              className="bg-gray-600 hover:bg-gray-500 text-white px-6 py-2 rounded-lg"
+            >
+              Back
+            </button>
+            <button
+              onClick={handleCreateUtilities}
+              disabled={createUtilitiesMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg"
+            >
+              {createUtilitiesMutation.isPending ? 'Creating...' : 'Create Utilities'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Assign Portfolios */}
+      {currentStep === 3 && (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h2 className="text-xl font-semibold text-white mb-6 flex items-center">
+            <BoltIcon className="w-6 h-6 mr-2" />
+            Step 3: Assign Initial Portfolios
+          </h2>
+
+          {templatesLoading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-400">Loading portfolio templates...</p>
             </div>
-
-            {isLoading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-400">Loading game sessions...</p>
+          ) : (
+            <div className="space-y-6">
+              {/* Portfolio Templates */}
+              <div>
+                <h3 className="font-medium text-white mb-4">Available Portfolio Templates</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  {portfolioTemplates?.map((template: PortfolioTemplate) => (
+                    <div key={template.id} className="bg-gray-700 rounded-lg p-4 border border-gray-600">
+                      <h4 className="font-medium text-white mb-2">{template.name}</h4>
+                      <p className="text-sm text-gray-400 mb-3">{template.description}</p>
+                      <div className="space-y-1">
+                        {template.plants.map((plant, index) => (
+                          <div key={index} className="flex justify-between text-xs">
+                            <span className="text-gray-300">{plant.name}</span>
+                            <span className="text-blue-400">{plant.capacity_mw} MW</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-gray-600">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Total Capacity:</span>
+                          <span className="text-white font-medium">
+                            {template.plants.reduce((sum, plant) => sum + plant.capacity_mw, 0)} MW
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ) : existingSessions && existingSessions.length > 0 ? (
-              <div className="space-y-4">
-                {existingSessions.map((session: any) => (
-                  <div key={session.id} className="bg-gray-700 rounded-lg p-6 border border-gray-600">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h4 className="text-lg font-semibold text-white">{session.name}</h4>
-                        <p className="text-gray-400 text-sm">
-                          Created: {new Date(session.created_at).toLocaleDateString()} • 
-                          Session ID: {session.id}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          session.state === 'year_planning' ? 'bg-blue-900 text-blue-300' :
-                          session.state === 'bidding_open' ? 'bg-green-900 text-green-300' :
-                          session.state === 'market_clearing' ? 'bg-yellow-900 text-yellow-300' :
-                          'bg-gray-600 text-gray-300'
-                        }`}>
-                          {session.state.replace('_', ' ').toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                      <div className="text-center bg-gray-600 rounded-lg p-3">
-                        <p className="text-gray-400 text-sm">Current Year</p>
-                        <p className="text-white font-bold text-lg">{session.current_year}</p>
-                      </div>
-                      <div className="text-center bg-gray-600 rounded-lg p-3">
-                        <p className="text-gray-400 text-sm">Simulation Period</p>
-                        <p className="text-white font-medium">{session.start_year}-{session.end_year}</p>
-                      </div>
-                      <div className="text-center bg-gray-600 rounded-lg p-3">
-                        <p className="text-gray-400 text-sm">Participants</p>
-                        <p className="text-white font-bold text-lg">{session.participant_count}</p>
-                      </div>
-                      <div className="text-center bg-gray-600 rounded-lg p-3">
-                        <p className="text-gray-400 text-sm">Progress</p>
-                        <p className="text-white font-medium">
-                          {Math.round(((session.current_year - session.start_year) / (session.end_year - session.start_year)) * 100)}%
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2 text-sm text-gray-400">
-                        <ClockIcon className="w-4 h-4" />
-                        <span>
-                          Year {session.current_year} of {session.end_year - session.start_year + 1}
-                        </span>
+              {/* Utility Assignments */}
+              <div>
+                <h3 className="font-medium text-white mb-4">Assign Portfolios to Utilities</h3>
+                <div className="space-y-4">
+                  {createdUtilities.map((utility) => (
+                    <div key={utility.id} className="bg-gray-700 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <BuildingOffice2Icon className="w-6 h-6 text-green-400" />
+                          <div>
+                            <h4 className="font-medium text-white">{utility.username}</h4>
+                            <p className="text-sm text-gray-400">Utility ID: {utility.id}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-4">
+                          <select
+                            value={setupData.portfolioAssignments[utility.id] || ''}
+                            onChange={(e) => handlePortfolioAssignment(utility.id, e.target.value)}
+                            className="bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="">Select Portfolio...</option>
+                            {portfolioTemplates?.map((template: PortfolioTemplate) => (
+                              <option key={template.id} value={template.id}>
+                                {template.name}
+                              </option>
+                            ))}
+                          </select>
+                          
+                          {setupData.portfolioAssignments[utility.id] && (
+                            <CheckCircleIcon className="w-6 h-6 text-green-400" />
+                          )}
+                        </div>
                       </div>
                       
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => {
-                            setCurrentSession(session);
-                            toast.success(`Switched to ${session.name}`);
-                          }}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm flex items-center space-x-1"
-                        >
-                          <PlayIcon className="w-4 h-4" />
-                          <span>Select</span>
-                        </button>
-                        
-                        <button className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg text-sm flex items-center space-x-1">
-                          <PencilIcon className="w-4 h-4" />
-                          <span>Edit</span>
-                        </button>
-                        
-                        <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm flex items-center space-x-1">
-                          <TrashIcon className="w-4 h-4" />
-                          <span>Delete</span>
-                        </button>
+                      {setupData.portfolioAssignments[utility.id] && (
+                        <div className="mt-3 pt-3 border-t border-gray-600">
+                          <p className="text-sm text-gray-400">
+                            Assigned: {portfolioTemplates?.find((t: PortfolioTemplate) => t.id === setupData.portfolioAssignments[utility.id])?.name}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-between">
+                <button
+                  onClick={() => setCurrentStep(2)}
+                  className="bg-gray-600 hover:bg-gray-500 text-white px-6 py-2 rounded-lg"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleAssignPortfolios}
+                  disabled={
+                    assignPortfoliosMutation.isPending || 
+                    Object.keys(setupData.portfolioAssignments).length !== createdUtilities.length
+                  }
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg"
+                >
+                  {assignPortfoliosMutation.isPending ? 'Assigning...' : 'Assign Portfolios'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Step 4: Start Game */}
+      {currentStep === 4 && (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h2 className="text-xl font-semibold text-white mb-6 flex items-center">
+            <PlayIcon className="w-6 h-6 mr-2" />
+            Step 4: Start Game
+          </h2>
+
+          <div className="space-y-6">
+            {/* Game Summary */}
+            <div className="bg-green-900/20 border border-green-700 rounded-lg p-6">
+              <h3 className="font-medium text-green-300 mb-4">Game Setup Complete!</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="bg-blue-600 p-3 rounded-lg w-12 h-12 mx-auto mb-2 flex items-center justify-center">
+                    <ClockIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <p className="text-sm text-gray-400">Simulation Period</p>
+                  <p className="font-medium text-white">{setupData.startYear} - {setupData.endYear}</p>
+                </div>
+                
+                <div className="text-center">
+                  <div className="bg-green-600 p-3 rounded-lg w-12 h-12 mx-auto mb-2 flex items-center justify-center">
+                    <UserGroupIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <p className="text-sm text-gray-400">Utilities</p>
+                  <p className="font-medium text-white">{createdUtilities.length}</p>
+                </div>
+                
+                <div className="text-center">
+                  <div className="bg-purple-600 p-3 rounded-lg w-12 h-12 mx-auto mb-2 flex items-center justify-center">
+                    <CurrencyDollarIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <p className="text-sm text-gray-400">Carbon Price</p>
+                  <p className="font-medium text-white">${setupData.carbonPrice}/ton</p>
+                </div>
+                
+                <div className="text-center">
+                  <div className="bg-yellow-600 p-3 rounded-lg w-12 h-12 mx-auto mb-2 flex items-center justify-center">
+                    <BoltIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <p className="text-sm text-gray-400">Total Capacity</p>
+                  <p className="font-medium text-white">
+                    {existingUtilities ? 
+                      existingUtilities.reduce((sum: number, utility: any) => sum + (utility.total_capacity_mw || 0), 0).toLocaleString() 
+                      : '0'} MW
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Utility Overview */}
+            <div>
+              <h3 className="font-medium text-white mb-4">Participating Utilities</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {createdUtilities.map((utility) => (
+                  <div key={utility.id} className="bg-gray-700 rounded-lg p-4">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <BuildingOffice2Icon className="w-6 h-6 text-green-400" />
+                      <div>
+                        <h4 className="font-medium text-white">{utility.username}</h4>
+                        <p className="text-sm text-gray-400">Ready to compete</p>
                       </div>
                     </div>
-
-                    {/* Session Progress Bar */}
-                    <div className="mt-4">
-                      <div className="flex justify-between text-xs text-gray-400 mb-1">
-                        <span>{session.start_year}</span>
-                        <span>Current: {session.current_year}</span>
-                        <span>{session.end_year}</span>
+                    
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Portfolio:</span>
+                        <span className="text-blue-400">
+                          {portfolioTemplates?.find((t: PortfolioTemplate) => t.id === setupData.portfolioAssignments[utility.id])?.name || 'Assigned'}
+                        </span>
                       </div>
-                      <div className="w-full bg-gray-600 rounded-full h-2">
-                        <div 
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                          style={{
-                            width: `${((session.current_year - session.start_year) / (session.end_year - session.start_year)) * 100}%`
-                          }}
-                        />
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Budget:</span>
+                        <span className="text-green-400">$2.0B</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Status:</span>
+                        <span className="text-green-400">Ready</span>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="text-center py-12">
-                <BuildingOffice2Icon className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-400 mb-2">No Game Sessions Yet</h3>
-                <p className="text-gray-500 mb-6">
-                  Create your first electricity market simulation to get started
-                </p>
-                <button
-                  onClick={() => setActiveTab('create')}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
-                >
-                  Create Your First Game
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
 
-      {/* Tips and Best Practices */}
-      <div className="bg-gradient-to-r from-green-900/20 to-blue-900/20 border border-green-700 rounded-lg p-6">
-        <div className="flex items-start space-x-3">
-          <CheckCircleIcon className="w-6 h-6 text-green-400 mt-1" />
-          <div>
-            <h3 className="text-lg font-semibold text-green-300">Setup Best Practices</h3>
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h4 className="font-medium text-white mb-3">🎯 Choosing Duration</h4>
-                <ul className="space-y-2 text-sm text-gray-300">
-                  <li>• <strong>5 years:</strong> Focus on bidding and basic strategy</li>
-                  <li>• <strong>8-10 years:</strong> Include major investment decisions</li>
-                  <li>• <strong>12+ years:</strong> Full technology transition scenarios</li>
-                  <li>• Consider semester length and class schedule</li>
-                  <li>• Allow 1-2 weeks per simulated year</li>
-                </ul>
+            {/* Next Steps */}
+            <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-6">
+              <h3 className="font-medium text-blue-300 mb-4">Next Steps</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-medium text-white mb-3">For Instructor:</h4>
+                  <ul className="space-y-2 text-sm text-gray-300">
+                    <li>• Start the year planning phase</li>
+                    <li>• Monitor utility participation</li>
+                    <li>• Open bidding when ready</li>
+                    <li>• Clear markets and advance years</li>
+                    <li>• Trigger market events as needed</li>
+                  </ul>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium text-white mb-3">For Utilities:</h4>
+                  <ul className="space-y-2 text-sm text-gray-300">
+                    <li>• Log in with utility credentials</li>
+                    <li>• Review initial portfolio</li>
+                    <li>• Plan investment strategies</li>
+                    <li>• Submit competitive bids</li>
+                    <li>• Monitor market performance</li>
+                  </ul>
+                </div>
               </div>
-              
-              <div>
-                <h4 className="font-medium text-white mb-3">⚡ Market Difficulty</h4>
-                <ul className="space-y-2 text-sm text-gray-300">
-                  <li>• <strong>Beginner:</strong> 2-3 utilities, low volatility</li>
-                  <li>• <strong>Intermediate:</strong> 4 utilities, medium volatility</li>
-                  <li>• <strong>Advanced:</strong> 5-6 utilities, high volatility</li>
-                  <li>• Higher carbon prices increase strategy complexity</li>
-                  <li>• Demand growth affects investment timing</li>
-                </ul>
-              </div>
-              
-              <div>
-                <h4 className="font-medium text-white mb-3">📊 Demand Configuration</h4>
-                <ul className="space-y-2 text-sm text-gray-300">
-                  <li>• Peak demand drives capacity requirements</li>
-                  <li>• Higher peak/baseload ratio = more volatile prices</li>
-                  <li>• 2-3% growth rate is realistic for most regions</li>
-                  <li>• Consider electrification scenarios (5%+ growth)</li>
-                  <li>• Load factor affects plant utilization</li>
-                </ul>
-              </div>
-              
-              <div>
-                <h4 className="font-medium text-white mb-3">💰 Economic Realism</h4>
-                <ul className="space-y-2 text-sm text-gray-300">
-                  <li>• $30-50/ton CO₂ represents current policies</li>
-                  <li>• $100+ ton models aggressive climate action</li>
-                  <li>• Fuel price volatility creates strategic challenges</li>
-                  <li>• Regulatory uncertainty affects planning</li>
-                  <li>• Match scenarios to learning objectives</li>
-                </ul>
-              </div>
+            </div>
+
+            <div className="flex justify-between">
+              <button
+                onClick={() => setCurrentStep(3)}
+                className="bg-gray-600 hover:bg-gray-500 text-white px-6 py-2 rounded-lg"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleStartGame}
+                disabled={startGameMutation.isPending}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg font-semibold"
+              >
+                {startGameMutation.isPending ? 'Starting...' : 'Start Game!'}
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Current Session Info */}
+      {currentSession && (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h3 className="text-lg font-semibold text-white mb-4">Current Active Session</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <p className="text-sm text-gray-400">Session Name</p>
+              <p className="font-medium text-white">{currentSession.name}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-400">Current Year</p>
+              <p className="font-medium text-white">{currentSession.current_year}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-400">Game State</p>
+              <p className="font-medium text-green-400 capitalize">{currentSession.state.replace('_', ' ')}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

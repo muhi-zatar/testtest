@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export interface GameSession {
   id: string;
@@ -115,8 +115,39 @@ export const useGameStore = create<GameStore>()(
 
       // Actions
       setRole: (role) => set({ role }),
-      setUtilityId: (utilityId) => set({ utilityId }),
-      setCurrentSession: (currentSession) => set({ currentSession }),
+      setUtilityId: (utilityId) => {
+        set({ utilityId });
+        // Clear cached data when switching utilities
+        set({ plants: [], bids: [], financials: null });
+      },
+      setCurrentSession: (currentSession) => {
+        const { currentSession: prevSession } = get();
+        
+        // Check if state changed and show notification
+        if (prevSession && currentSession && prevSession.state !== currentSession.state) {
+          const stateMessages: Record<string, string> = {
+            'year_planning': '📋 Year planning phase started - Review market conditions and plan investments',
+            'bidding_open': '📝 Bidding is now open - Submit your bids for all load periods',
+            'market_clearing': '⚡ Markets are clearing - Results will be available soon',
+            'year_complete': '✅ Year completed - Review your performance and prepare for next year',
+            'game_complete': '🎉 Game completed - Final results are available'
+          };
+          
+          const message = stateMessages[currentSession.state] || `Game state changed to ${currentSession.state.replace('_', ' ')}`;
+          
+          // Use a timeout to ensure the toast appears after component renders
+          setTimeout(() => {
+            if (typeof window !== 'undefined' && window.location.pathname.includes('/utility/')) {
+              // Only show notifications for utility users
+              import('react-hot-toast').then(({ default: toast }) => {
+                toast.success(message, { duration: 6000 });
+              });
+            }
+          }, 500);
+        }
+        
+        set({ currentSession });
+      },
       setMarketResults: (marketResults) => set({ marketResults }),
       setFuelPrices: (fuelPrices) => set({ fuelPrices }),
       setDemandForecast: (demandForecast) => set({ demandForecast }),
@@ -158,11 +189,19 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'electricity-market-game',
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         role: state.role,
         utilityId: state.utilityId,
         currentSession: state.currentSession,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          console.log('🔄 Store rehydrated successfully');
+        } else {
+          console.log('🔄 Store rehydration failed or empty');
+        }
+      },
     }
   )
 );

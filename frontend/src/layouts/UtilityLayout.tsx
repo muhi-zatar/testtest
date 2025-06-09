@@ -17,21 +17,39 @@ const UtilityLayout: React.FC = () => {
   const { utilityId } = useParams<{ utilityId: string }>();
   const { currentSession } = useGameStore();
 
+  // Get fresh session data with frequent updates
+  const { data: sessionData } = useQuery({
+    queryKey: ['game-session', currentSession?.id],
+    queryFn: () => currentSession ? ElectricityMarketAPI.getGameSession(currentSession.id) : null,
+    enabled: !!currentSession,
+    refetchInterval: 5000, // Check every 5 seconds for state changes
+    onSuccess: (data) => {
+      if (data && data.state !== currentSession?.state) {
+        console.log('🔄 Game state updated in layout:', data.state);
+        setCurrentSession(data);
+      }
+    }
+  });
+
+  // Use the most up-to-date session data
+  const activeSession = sessionData || currentSession;
+
   // Get utility financial data
   const { data: financials } = useQuery({
-    queryKey: ['utility-financials', utilityId, currentSession?.id],
+    queryKey: ['utility-financials', utilityId, activeSession?.id],
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getUserFinancials(utilityId, currentSession.id) : null,
-    enabled: !!utilityId && !!currentSession,
-    refetchInterval: 10000, // Refresh every 10 seconds
+    enabled: !!utilityId && !!activeSession,
+    refetchInterval: 5000, // Refresh every 5 seconds
   });
 
   // Get utility plants
   const { data: plants } = useQuery({
-    queryKey: ['utility-plants', utilityId, currentSession?.id],
+    queryKey: ['utility-plants', utilityId, activeSession?.id],
     queryFn: () => utilityId && currentSession ? 
       ElectricityMarketAPI.getPowerPlants(currentSession.id, utilityId) : null,
-    enabled: !!utilityId && !!currentSession,
+    enabled: !!utilityId && !!activeSession,
+    refetchInterval: 5000, // Add refetch interval
   });
 
   const navigation = [
@@ -144,26 +162,33 @@ const UtilityLayout: React.FC = () => {
         </div>
 
         {/* Game Session Info */}
-        {currentSession && (
+        {activeSession && (
           <div className="p-4 mx-4 mt-4 bg-purple-900/20 rounded-lg border border-purple-700/50">
             <h3 className="text-sm font-medium text-purple-300 mb-2">Current Session</h3>
-            <p className="text-white font-medium text-sm mb-2">{currentSession.name}</p>
+            <p className="text-white font-medium text-sm mb-2">{activeSession.name}</p>
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
                 <span className="text-gray-400">Current Year:</span>
-                <span className="text-white font-medium">{currentSession.current_year}</span>
+                <span className="text-white font-medium">{activeSession.current_year}</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-gray-400">Simulation:</span>
-                <span className="text-white">{currentSession.start_year}-{currentSession.end_year}</span>
+                <span className="text-white">{activeSession.start_year}-{activeSession.end_year}</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-gray-400">Market State:</span>
-                <span className="text-green-400 capitalize">{currentSession.state.replace('_', ' ')}</span>
+                <span className={`capitalize ${
+                  activeSession.state === 'bidding_open' ? 'text-green-400' :
+                  activeSession.state === 'year_planning' ? 'text-blue-400' :
+                  activeSession.state === 'market_clearing' ? 'text-yellow-400' :
+                  'text-gray-400'
+                }`}>
+                  {activeSession.state.replace('_', ' ')}
+                </span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-gray-400">Carbon Price:</span>
-                <span className="text-yellow-400">${currentSession.carbon_price_per_ton}/ton</span>
+                <span className="text-yellow-400">${activeSession.carbon_price_per_ton}/ton</span>
               </div>
             </div>
           </div>
@@ -220,6 +245,29 @@ const UtilityLayout: React.FC = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* Year Progress */}
+              {activeSession && (
+                <div className="bg-gray-700 rounded-lg px-4 py-2">
+                  <div className="flex items-center space-x-3">
+                    <span className="text-sm text-gray-300">Progress:</span>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-32 bg-gray-600 rounded-full h-2">
+                        <div 
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                          style={{
+                            width: `${((activeSession.current_year - activeSession.start_year) / 
+                                    (activeSession.end_year - activeSession.start_year)) * 100}%`
+                          }}
+                        />
+                      </div>
+                      <span className="text-sm text-white font-medium">
+                        {activeSession.current_year} / {activeSession.end_year}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {/* ROI Indicator */}
               {financials && totalInvestment > 0 && (
                 <div className="bg-gray-700 rounded-lg px-4 py-2">

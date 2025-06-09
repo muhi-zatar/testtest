@@ -227,6 +227,54 @@ export class ElectricityMarketAPI {
     const response = await api.get('/scenarios');
     return response.data;
   }
+
+  // Portfolio and Financial Management
+  static async getAllUtilities(sessionId: string) {
+    try {
+      const response = await api.get(`/game-sessions/${sessionId}/utilities`);
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        // If endpoint doesn't exist, try getting all users and filter
+        console.log('Fallback: Getting all users and filtering utilities');
+        const usersResponse = await api.get('/users');
+        return usersResponse.data.filter((user: any) => user.user_type === 'utility');
+      }
+      throw error;
+    }
+  }
+
+  // Add method to get all users (for role selector)
+  static async getAllUsers() {
+    const response = await api.get('/users');
+    return response.data;
+  }
+
+  static async updateUtilityFinancials(userId: string, financials: {
+    budget: number;
+    debt: number;
+    equity: number;
+  }) {
+    const response = await api.put(`/users/${userId}/financials`, financials);
+    return response.data;
+  }
+
+  static async getPortfolioTemplates() {
+    const response = await api.get('/portfolio-templates');
+    return response.data;
+  }
+
+  static async assignPortfolio(sessionId: string, utilityId: string, portfolio: any) {
+    const response = await api.post(`/game-sessions/${sessionId}/assign-portfolio`, portfolio, {
+      params: { utility_id: utilityId }
+    });
+    return response.data;
+  }
+
+  static async bulkAssignPortfolios(sessionId: string, assignments: any) {
+    const response = await api.post(`/game-sessions/${sessionId}/bulk-assign-portfolios`, assignments);
+    return response.data;
+  }
 }
 
 export default ElectricityMarketAPI;

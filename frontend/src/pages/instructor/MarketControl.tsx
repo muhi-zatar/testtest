@@ -224,12 +224,15 @@ const MarketControl: React.FC = () => {
 
   const advanceYearMutation = useMutation({
     mutationFn: () => currentSession ? ElectricityMarketAPI.advanceYear(currentSession.id) : Promise.reject(),
-    onSuccess: (data) => {
-      toast.success(`Advanced to year ${data.current_year}`);
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      if (currentSession) {
-        setCurrentSession({ ...currentSession, current_year: data.current_year });
+    onSuccess: () => {
+      // Instead of advancing year, start planning for next year
+      const nextYear = currentSession.current_year + 1;
+      if (nextYear <= currentSession.end_year) {
+        startYearPlanningMutation.mutate(nextYear);
+      } else {
+        toast.success('Simulation completed!');
       }
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
     onError: () => toast.error('Failed to advance year')
   });
