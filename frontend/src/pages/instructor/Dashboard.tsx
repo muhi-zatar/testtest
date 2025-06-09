@@ -79,11 +79,19 @@ const InstructorDashboard: React.FC = () => {
   // Clear markets mutation
   const clearMarketsMutation = useMutation({
     mutationFn: (year: number) => currentSession ? ElectricityMarketAPI.clearAnnualMarkets(currentSession.id, year) : Promise.reject(),
-    onSuccess: () => {
-      toast.success('Markets cleared successfully');
+    onSuccess: (data) => {
+      if (data.status === 'no_bids_submitted') {
+        toast.warning(`No bids submitted for year ${data.year}. Year completed without market activity.`);
+      } else {
+        toast.success('Markets cleared successfully');
+      }
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['market-results'] });
       queryClient.invalidateQueries({ queryKey: ['multi-year-analysis'] });
+    },
+    onError: (error: any) => {
+      const errorMessage = error.response?.data?.detail || 'Failed to clear markets';
+      toast.error(errorMessage);
     }
   });
 
@@ -288,7 +296,7 @@ const InstructorDashboard: React.FC = () => {
           <h3 className="text-lg font-semibold text-white mb-4">Generation Capacity Mix</h3>
           <div className="h-64 flex items-center justify-center">
             {capacityMixData.length > 0 ? (
-              <ResponsiveContainer width="100%\" height="100%">
+              <ResponsiveContainer width="100%\" height=\"100%">
                 <PieChart>
                   <Pie
                     data={capacityMixData}
