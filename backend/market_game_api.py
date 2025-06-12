@@ -342,6 +342,84 @@ DEFAULT_RENEWABLE_AVAILABILITY = {
     "2030": {"solar_availability": 1.0, "wind_availability": 1.0, "weather_description": "Return to normal conditions"}
 }
 
+# Portfolio templates for game setup
+PORTFOLIO_TEMPLATES = [
+    {
+        "id": "traditional_utility",
+        "name": "Traditional Utility",
+        "description": "Coal and natural gas focused portfolio with reliable baseload generation",
+        "plants": [
+            {"plant_type": "coal", "capacity_mw": 600, "name": "Coal Baseload Plant"},
+            {"plant_type": "natural_gas_cc", "capacity_mw": 400, "name": "Gas Combined Cycle"},
+            {"plant_type": "natural_gas_ct", "capacity_mw": 200, "name": "Gas Peaker"}
+        ]
+    },
+    {
+        "id": "balanced_portfolio",
+        "name": "Balanced Portfolio",
+        "description": "Mix of traditional and renewable technologies for diversified risk",
+        "plants": [
+            {"plant_type": "natural_gas_cc", "capacity_mw": 500, "name": "Gas Combined Cycle"},
+            {"plant_type": "nuclear", "capacity_mw": 800, "name": "Nuclear Baseload"},
+            {"plant_type": "wind_onshore", "capacity_mw": 300, "name": "Wind Farm"},
+            {"plant_type": "solar", "capacity_mw": 200, "name": "Solar Farm"}
+        ]
+    },
+    {
+        "id": "renewable_focused",
+        "name": "Renewable Focused",
+        "description": "Clean energy portfolio with storage and flexible generation",
+        "plants": [
+            {"plant_type": "solar", "capacity_mw": 500, "name": "Large Solar Project"},
+            {"plant_type": "wind_onshore", "capacity_mw": 400, "name": "Onshore Wind Farm"},
+            {"plant_type": "wind_offshore", "capacity_mw": 300, "name": "Offshore Wind"},
+            {"plant_type": "battery", "capacity_mw": 150, "name": "Battery Storage"},
+            {"plant_type": "natural_gas_ct", "capacity_mw": 200, "name": "Backup Gas Turbine"}
+        ]
+    },
+    {
+        "id": "nuclear_baseload",
+        "name": "Nuclear Baseload",
+        "description": "Nuclear-heavy portfolio with gas peaking for reliable clean power",
+        "plants": [
+            {"plant_type": "nuclear", "capacity_mw": 1000, "name": "Large Nuclear Plant"},
+            {"plant_type": "natural_gas_cc", "capacity_mw": 300, "name": "Gas Combined Cycle"},
+            {"plant_type": "natural_gas_ct", "capacity_mw": 150, "name": "Gas Peaker"},
+            {"plant_type": "solar", "capacity_mw": 200, "name": "Solar Supplement"}
+        ]
+    },
+    {
+        "id": "flexible_generation",
+        "name": "Flexible Generation",
+        "description": "Fast-ramping plants optimized for market volatility and grid services",
+        "plants": [
+            {"plant_type": "natural_gas_cc", "capacity_mw": 600, "name": "Flexible Gas CC"},
+            {"plant_type": "natural_gas_ct", "capacity_mw": 300, "name": "Fast Gas Turbines"},
+            {"plant_type": "battery", "capacity_mw": 200, "name": "Grid Battery"},
+            {"plant_type": "solar", "capacity_mw": 300, "name": "Solar with Storage"}
+        ]
+    },
+    {
+        "id": "transition_portfolio",
+        "name": "Energy Transition",
+        "description": "Portfolio designed for the clean energy transition with retiring coal",
+        "plants": [
+            {"plant_type": "coal", "capacity_mw": 400, "name": "Legacy Coal Plant"},
+            {"plant_type": "natural_gas_cc", "capacity_mw": 500, "name": "Bridge Gas Plant"},
+            {"plant_type": "wind_onshore", "capacity_mw": 400, "name": "New Wind Farm"},
+            {"plant_type": "solar", "capacity_mw": 350, "name": "Solar Development"},
+            {"plant_type": "battery", "capacity_mw": 100, "name": "Storage System"}
+        ]
+    }
+]
+
+class PortfolioAssignment(BaseModel):
+    utility_id: str
+    portfolio_id: str
+
+class BulkPortfolioAssignment(BaseModel):
+    assignments: Dict[str, str]  # utility_id -> portfolio_id
+
 # Database dependency
 def get_db():
     db = SessionLocal()
@@ -570,6 +648,11 @@ async def get_plant_template(plant_type: str):
         **PLANT_TEMPLATES_DATA[plant_type]
     }
 
+@app.get("/portfolio-templates")
+async def get_portfolio_templates():
+    """Get all available portfolio templates for game setup"""
+    return PORTFOLIO_TEMPLATES
+
 @app.post("/game-sessions/{session_id}/plants", response_model=PowerPlantResponse)
 async def create_power_plant(
     session_id: str, 
@@ -651,6 +734,121 @@ async def create_power_plant(
         heat_rate=db_plant.heat_rate,
         fuel_type=db_plant.fuel_type
     )
+
+@app.post("/game-sessions/{session_id}/assign-portfolio")
+async def assign_portfolio_to_utility(
+    session_id: str,
+    assignment: PortfolioAssignment,
+    db: Session = Depends(get_db)
+):
+    """Assign a portfolio template to a specific utility"""
+    # Verify session exists
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    # Verify utility exists
+    utility = db.query(DBUser).filter(DBUser.id == assignment.utility_id).first()
+    if not utility:
+        raise HTTPException(status_code=404, detail="Utility not found")
+    
+    # Find portfolio template
+    portfolio_template = None
+    for template in PORTFOLIO_TEMPLATES:
+        if template["id"] == assignment.portfolio_id:
+            portfolio_template = template
+            break
+    
+    if not portfolio_template:
+        raise HTTPException(status_code=404, detail="Portfolio template not found")
+    
+    # Create plants from template
+    created_plants = []
+    total_investment = 0
+    
+    for plant_config in portfolio_template["plants"]:
+        plant_type = plant_config["plant_type"]
+        capacity_mw = plant_config["capacity_mw"]
+        plant_name = plant_config["name"]
+        
+        # Get plant template data
+        template_data = PLANT_TEMPLATES_DATA.get(plant_type)
+        if not template_data:
+            continue
+        
+        # Calculate costs
+        capacity_kw = capacity_mw * 1000
+        capital_cost = capacity_kw * template_data["overnight_cost_per_kw"]
+        fixed_om_annual = capacity_kw * template_data["fixed_om_per_kw_year"]
+        total_investment += capital_cost
+        
+        # Create plant
+        plant_id = str(uuid.uuid4())
+        db_plant = DBPowerPlant(
+            id=plant_id,
+            utility_id=assignment.utility_id,
+            game_session_id=session_id,
+            name=plant_name,
+            plant_type=PlantTypeEnum(plant_type),
+            capacity_mw=capacity_mw,
+            construction_start_year=2020,  # Existing plants
+            commissioning_year=2023,      # Already operating
+            retirement_year=2023 + template_data["economic_life_years"],
+            status=PlantStatusEnum.operating,
+            capital_cost_total=capital_cost,
+            fixed_om_annual=fixed_om_annual,
+            variable_om_per_mwh=template_data["variable_om_per_mwh"],
+            capacity_factor=template_data["capacity_factor_base"],
+            heat_rate=template_data.get("heat_rate"),
+            fuel_type=template_data.get("fuel_type"),
+            min_generation_mw=capacity_mw * template_data["min_generation_pct"]
+        )
+        
+        db.add(db_plant)
+        created_plants.append({
+            "id": plant_id,
+            "name": plant_name,
+            "type": plant_type,
+            "capacity_mw": capacity_mw
+        })
+    
+    # Update utility finances (assume 70% debt, 30% equity financing)
+    equity_required = total_investment * 0.3
+    debt_financing = total_investment * 0.7
+    
+    utility.budget -= equity_required
+    utility.debt += debt_financing
+    utility.equity -= equity_required
+    
+    db.commit()
+    
+    return {
+        "message": f"Portfolio '{portfolio_template['name']}' assigned to {utility.username}",
+        "utility_id": assignment.utility_id,
+        "portfolio_name": portfolio_template["name"],
+        "plants_created": created_plants,
+        "total_investment": total_investment,
+        "equity_required": equity_required
+    }
+
+@app.post("/game-sessions/{session_id}/bulk-assign-portfolios")
+async def bulk_assign_portfolios(
+    session_id: str,
+    assignments: BulkPortfolioAssignment,
+    db: Session = Depends(get_db)
+):
+    """Assign portfolio templates to multiple utilities at once"""
+    results = []
+    
+    for utility_id, portfolio_id in assignments.assignments.items():
+        try:
+            assignment = PortfolioAssignment(utility_id=utility_id, portfolio_id=portfolio_id)
+            result = await assign_portfolio_to_utility(session_id, assignment, db)
+            results.append(result)
+        except Exception as e:
+            results.append({"error": str(e), "utility_id": utility_id})
+    
+    return {"results": results}
 
 @app.get("/game-sessions/{session_id}/plants", response_model=List[PowerPlantResponse])
 async def get_power_plants(
