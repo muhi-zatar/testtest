@@ -562,6 +562,11 @@ const Investment: React.FC = () => {
                         {simulation.financial_impact.budget_sufficient ? 'Yes' : 'No'}
                       </span>
                     </div>
+                    {!simulation.financial_impact.budget_sufficient && (
+                      <div className="mt-2 p-2 bg-red-900/30 rounded text-xs text-red-300">
+                        ⚠️ This investment would exceed your available budget. Consider reducing capacity or improving financial position.
+                      </div>
+                    )}
                   </div>
                 </div>
 
