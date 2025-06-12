@@ -6,6 +6,24 @@ import uuid
 import random
 from abc import ABC, abstractmethod
 
+@dataclass
+class RenewableAvailability:
+    """Renewable energy availability for a specific year"""
+    year: int
+    solar_availability: float  # 0.0 to 1.5 (multiplier for base capacity factor)
+    wind_availability: float   # 0.0 to 1.5 (multiplier for base capacity factor)
+    weather_description: str
+    seasonal_variations: Dict[str, float] = field(default_factory=dict)
+    
+    def get_adjusted_capacity_factor(self, plant_type: PlantType, base_cf: float) -> float:
+        """Get adjusted capacity factor based on renewable availability"""
+        if plant_type == PlantType.SOLAR:
+            return min(1.0, base_cf * self.solar_availability)
+        elif plant_type in [PlantType.WIND_ONSHORE, PlantType.WIND_OFFSHORE]:
+            return min(1.0, base_cf * self.wind_availability)
+        else:
+            return base_cf
+
 class UserType(Enum):
     OPERATOR = "operator"
     UTILITY = "utility"
@@ -229,6 +247,46 @@ class User:
     user_type: UserType
     created_at: datetime = field(default_factory=datetime.now)
 
+# Default renewable availability data for simulation years
+DEFAULT_RENEWABLE_AVAILABILITY = {
+    2025: RenewableAvailability(
+        year=2025,
+        solar_availability=1.0,
+        wind_availability=1.0,
+        weather_description="Normal weather conditions"
+    ),
+    2026: RenewableAvailability(
+        year=2026,
+        solar_availability=1.1,
+        wind_availability=0.9,
+        weather_description="Above-average solar, below-average wind"
+    ),
+    2027: RenewableAvailability(
+        year=2027,
+        solar_availability=0.8,
+        wind_availability=1.2,
+        weather_description="Cloudy year, strong wind patterns"
+    ),
+    2028: RenewableAvailability(
+        year=2028,
+        solar_availability=1.2,
+        wind_availability=1.1,
+        weather_description="Excellent renewable conditions"
+    ),
+    2029: RenewableAvailability(
+        year=2029,
+        solar_availability=0.9,
+        wind_availability=0.8,
+        weather_description="Challenging renewable year"
+    ),
+    2030: RenewableAvailability(
+        year=2030,
+        solar_availability=1.0,
+        wind_availability=1.0,
+        weather_description="Return to normal conditions"
+    ),
+}
+
 @dataclass
 class PowerPlant:
     # All required fields first (no defaults)
@@ -282,13 +340,20 @@ class PowerPlant:
         
         base_cf = self.capacity_factor
         
+        # Apply renewable availability adjustments
+        renewable_availability = DEFAULT_RENEWABLE_AVAILABILITY.get(year)
+        if renewable_availability:
+            base_cf = renewable_availability.get_adjusted_capacity_factor(
+                PlantType(self.plant_type), base_cf
+            )
+        
         # Renewable capacity factors vary by period
         if self.plant_type in [PlantType.SOLAR, PlantType.WIND_ONSHORE, PlantType.WIND_OFFSHORE]:
             # Solar peaks during shoulder/peak hours
             if self.plant_type == PlantType.SOLAR:
                 factors = {
                     LoadPeriod.OFF_PEAK: 0.1,    # Night time
-                    LoadPeriod.SHOULDER: 1.2,    # Day time9
+                    LoadPeriod.SHOULDER: 1.2,    # Day time
                     LoadPeriod.PEAK: 1.4         # Peak sun hours
                 }
             # Wind is more consistent but varies

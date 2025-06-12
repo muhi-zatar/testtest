@@ -59,6 +59,14 @@ const MarketAnalysis: React.FC = () => {
     enabled: !!currentSession,
   });
 
+  // Get renewable availability
+  const { data: renewableAvailability } = useQuery({
+    queryKey: ['renewable-availability', currentSession?.id, currentSession?.current_year],
+    queryFn: () => currentSession ? 
+      ElectricityMarketAPI.getRenewableAvailability(currentSession.id, currentSession.current_year) : null,
+    enabled: !!currentSession,
+  });
+
   // Process market data for charts
   const processMarketData = () => {
     if (!marketAnalysis?.yearly_data) return [];
@@ -460,6 +468,73 @@ const MarketAnalysis: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+        {/* Renewable Availability Analysis */}
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+            <CloudIcon className="w-6 h-6 mr-2" />
+            Renewable Energy Outlook
+          </h3>
+          
+          {renewableAvailability ? (
+            <div className="space-y-4">
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-3">Current Year Conditions</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center">
+                    <div className={`text-3xl font-bold mb-2 ${
+                      renewableAvailability.renewable_availability.solar_availability > 1.1 ? 'text-green-400' :
+                      renewableAvailability.renewable_availability.solar_availability < 0.9 ? 'text-red-400' :
+                      'text-yellow-400'
+                    }`}>
+                      {(renewableAvailability.renewable_availability.solar_availability * 100).toFixed(0)}%
+                    </div>
+                    <p className="text-gray-400 text-sm">Solar Availability</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {renewableAvailability.impact_analysis.solar_impact} Impact
+                    </p>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className={`text-3xl font-bold mb-2 ${
+                      renewableAvailability.renewable_availability.wind_availability > 1.1 ? 'text-green-400' :
+                      renewableAvailability.renewable_availability.wind_availability < 0.9 ? 'text-red-400' :
+                      'text-yellow-400'
+                    }`}>
+                      {(renewableAvailability.renewable_availability.wind_availability * 100).toFixed(0)}%
+                    </div>
+                    <p className="text-gray-400 text-sm">Wind Availability</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {renewableAvailability.impact_analysis.wind_impact} Impact
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-gray-600">
+                  <p className="text-sm text-gray-300 text-center">
+                    {renewableAvailability.renewable_availability.weather_description}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-3">Strategic Recommendations</h4>
+                <ul className="space-y-2 text-sm text-gray-300">
+                  {renewableAvailability.impact_analysis.recommendations.map((rec: string, index: number) => (
+                    <li key={index} className="flex items-start space-x-2">
+                      <span className="text-blue-400 mt-1">•</span>
+                      <span>{rec}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-400">
+              <CloudIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p>Renewable availability data not available</p>
+            </div>
+          )}
         </div>
       </div>
 

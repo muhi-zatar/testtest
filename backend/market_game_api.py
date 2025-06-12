@@ -176,7 +176,7 @@ app.add_middleware(
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    PLANT_TEMPLATES, DEFAULT_FUEL_PRICES, DEFAULT_RENEWABLE_AVAILABILITY
 )
 
 # Plant templates data
@@ -892,6 +892,52 @@ async def get_power_plants(
         } for plant in plants
     ]
 
+@app.put("/game-sessions/{session_id}/plants/{plant_id}/retire")
+async def retire_plant(
+    session_id: str, 
+    plant_id: str,
+    retirement_year: int = Query(..., description="Year to retire the plant"),
+    db: Session = Depends(get_db)
+):
+    """Retire a power plant early"""
+    # Verify game session exists
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    # Get the plant
+    plant = db.query(DBPowerPlant).filter(
+        DBPowerPlant.id == plant_id,
+        DBPowerPlant.game_session_id == session_id
+    ).first()
+    
+    if not plant:
+        raise HTTPException(status_code=404, detail="Plant not found")
+    
+    # Validate retirement year
+    if retirement_year < session.current_year:
+        raise HTTPException(status_code=400, detail="Cannot retire plant in the past")
+    
+    if retirement_year >= plant.retirement_year:
+        raise HTTPException(status_code=400, detail="Plant already scheduled to retire earlier or at the same time")
+    
+    # Update retirement year
+    old_retirement = plant.retirement_year
+    plant.retirement_year = retirement_year
+    
+    # If retiring immediately, update status
+    if retirement_year <= session.current_year:
+        plant.status = PlantStatusEnum.retired
+    
+    db.commit()
+    
+    return {
+        "message": f"Plant retirement moved from {old_retirement} to {retirement_year}",
+        "plant_id": plant_id,
+        "new_retirement_year": retirement_year,
+        "immediate_retirement": retirement_year <= session.current_year
+    }
+
 @app.get("/game-sessions/{session_id}/plants/{plant_id}/economics")
 async def get_plant_economics(
     session_id: str,
@@ -1051,6 +1097,67 @@ async def get_fuel_prices(session_id: str, year: int, db: Session = Depends(get_
         "fuel_prices": year_prices,
         "carbon_price_per_ton": session.carbon_price_per_ton
     }
+
+@app.get("/game-sessions/{session_id}/renewable-availability/{year}")
+async def get_renewable_availability(
+    session_id: str,
+    year: int,
+    db: Session = Depends(get_db)
+):
+    """Get renewable energy availability for a specific year"""
+    # Verify game session exists
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    # Get renewable availability data
+    availability = DEFAULT_RENEWABLE_AVAILABILITY.get(year)
+    if not availability:
+        # Generate default availability for years not in the data
+        import random
+        availability_data = {
+            "year": year,
+            "solar_availability": round(random.uniform(0.8, 1.2), 2),
+            "wind_availability": round(random.uniform(0.8, 1.2), 2),
+            "weather_description": "Variable weather conditions"
+        }
+    else:
+        availability_data = {
+            "year": availability.year,
+            "solar_availability": availability.solar_availability,
+            "wind_availability": availability.wind_availability,
+            "weather_description": availability.weather_description
+        }
+    
+    return {
+        "renewable_availability": availability_data,
+        "impact_analysis": {
+            "solar_impact": "High" if availability_data["solar_availability"] > 1.1 else 
+                           "Low" if availability_data["solar_availability"] < 0.9 else "Normal",
+            "wind_impact": "High" if availability_data["wind_availability"] > 1.1 else 
+                          "Low" if availability_data["wind_availability"] < 0.9 else "Normal",
+            "recommendations": _get_renewable_recommendations(availability_data)
+        }
+    }
+
+def _get_renewable_recommendations(availability_data):
+    """Generate recommendations based on renewable availability"""
+    recommendations = []
+    
+    if availability_data["solar_availability"] > 1.1:
+        recommendations.append("Excellent solar conditions - consider aggressive solar bidding")
+    elif availability_data["solar_availability"] < 0.9:
+        recommendations.append("Poor solar conditions - reduce solar capacity bids")
+    
+    if availability_data["wind_availability"] > 1.1:
+        recommendations.append("Strong wind patterns - wind plants can bid at higher capacity")
+    elif availability_data["wind_availability"] < 0.9:
+        recommendations.append("Weak wind conditions - conservative wind bidding recommended")
+    
+    if not recommendations:
+        recommendations.append("Normal renewable conditions - bid at standard capacity factors")
+    
+    return recommendations
 
 @app.get("/game-sessions/{session_id}/market-results")
 async def get_market_results(

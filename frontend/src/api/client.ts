@@ -155,6 +155,18 @@ export class ElectricityMarketAPI {
     return response.data;
   }
 
+  static async getRenewableAvailability(sessionId: string, year: number) {
+    const response = await api.get(`/game-sessions/${sessionId}/renewable-availability/${year}`);
+    return response.data;
+  }
+
+  static async retirePlant(sessionId: string, plantId: string, retirementYear: number) {
+    const response = await api.put(`/game-sessions/${sessionId}/plants/${plantId}/retire`, null, {
+      params: { retirement_year: retirementYear }
+    });
+    return response.data;
+  }
+
   static async getMarketResults(sessionId: string, year?: number, period?: string) {
     const response = await api.get(`/game-sessions/${sessionId}/market-results`, {
       params: { year, period }

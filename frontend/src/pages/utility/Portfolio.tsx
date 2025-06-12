@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   BuildingOffice2Icon,
   BoltIcon,
@@ -13,8 +13,10 @@ import {
   FireIcon,
   InformationCircleIcon,
   WrenchScrewdriverIcon,
-  CalendarIcon
+  CalendarIcon,
+  TrashIcon
 } from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
 import { 
   BarChart, 
   Bar, 
@@ -45,10 +47,13 @@ interface PlantPerformance {
 const Portfolio: React.FC = () => {
   const { utilityId } = useParams<{ utilityId: string }>();
   const { currentSession } = useGameStore();
+  const queryClient = useQueryClient();
   
   const [selectedPlant, setSelectedPlant] = useState<string>('');
   const [viewMode, setViewMode] = useState<'overview' | 'performance' | 'maintenance'>('overview');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [showRetirementModal, setShowRetirementModal] = useState<boolean>(false);
+  const [retirementYear, setRetirementYear] = useState<number>(currentSession?.current_year || 2025);
 
   // Get utility plants
   const { data: plants, isLoading: plantsLoading } = useQuery({
@@ -75,6 +80,29 @@ const Portfolio: React.FC = () => {
       ElectricityMarketAPI.getFuelPrices(currentSession.id, currentSession.current_year) : null,
     enabled: !!currentSession,
   });
+
+  // Retire plant mutation
+  const retirePlantMutation = useMutation({
+    mutationFn: ({ plantId, retirementYear }: { plantId: string; retirementYear: number }) => {
+      if (!currentSession) throw new Error('No active session');
+      return ElectricityMarketAPI.retirePlant(currentSession.id, plantId, retirementYear);
+    },
+    onSuccess: (data) => {
+      toast.success(data.message);
+      queryClient.invalidateQueries({ queryKey: ['utility-plants'] });
+      queryClient.invalidateQueries({ queryKey: ['utility-financials'] });
+      setShowRetirementModal(false);
+      setSelectedPlant('');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to retire plant');
+    }
+  });
+
+  const handleRetirePlant = () => {
+    if (!selectedPlant) return;
+    retirePlantMutation.mutate({ plantId: selectedPlant, retirementYear });
+  };
 
   // Filter plants based on status
   const filteredPlants = plants?.filter(plant => {
@@ -582,6 +610,20 @@ const Portfolio: React.FC = () => {
                   <div className="flex items-center space-x-2">
                     <StatusIcon className={`w-5 h-5 ${statusInfo.color}`} />
                     <span className={`font-medium ${statusInfo.color}`}>{statusInfo.label}</span>
+                    {plant.status === 'operating' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPlant(plant.id);
+                          setRetirementYear(currentSession?.current_year || 2025);
+                          setShowRetirementModal(true);
+                        }}
+                        className="ml-4 bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center space-x-1"
+                      >
+                        <TrashIcon className="w-4 h-4" />
+                        <span>Retire</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -691,6 +733,87 @@ const Portfolio: React.FC = () => {
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* Retirement Modal */}
+      {showRetirementModal && selectedPlant && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700">
+            <h3 className="text-lg font-semibold text-white mb-4">Retire Power Plant</h3>
+            
+            {(() => {
+              const plant = plants?.find(p => p.id === selectedPlant);
+              if (!plant) return null;
+              
+              return (
+                <div>
+                  <div className="mb-4">
+                    <p className="text-gray-300 mb-2">
+                      You are about to retire: <strong className="text-white">{plant.name}</strong>
+                    </p>
+                    <p className="text-sm text-gray-400">
+                      Current retirement year: {plant.retirement_year}
+                    </p>
+                  </div>
+                  
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      New Retirement Year
+                    </label>
+                    <select
+                      value={retirementYear}
+                      onChange={(e) => setRetirementYear(Number(e.target.value))}
+                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    >
+                      {Array.from({ length: 10 }, (_, i) => {
+                        const year = (currentSession?.current_year || 2025) + i;
+                        if (year >= plant.retirement_year) return null;
+                        return (
+                          <option key={year} value={year}>{year}</option>
+                        );
+                      })}
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Early retirement will reduce the plant's economic life
+                    </p>
+                  </div>
+                  
+                  <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-3 mb-4">
+                    <div className="flex items-start space-x-2">
+                      <ExclamationTriangleIcon className="w-5 h-5 text-yellow-400 mt-0.5" />
+                      <div>
+                        <p className="text-yellow-300 font-medium text-sm">Warning</p>
+                        <p className="text-yellow-200 text-xs">
+                          Early retirement will result in stranded assets and reduced ROI. 
+                          Consider market conditions and remaining asset value.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => {
+                        setShowRetirementModal(false);
+                        setSelectedPlant('');
+                      }}
+                      className="flex-1 bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleRetirePlant}
+                      disabled={retirePlantMutation.isPending}
+                      className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg"
+                    >
+                      {retirePlantMutation.isPending ? 'Retiring...' : 'Retire Plant'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
 

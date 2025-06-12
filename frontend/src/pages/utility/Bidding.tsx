@@ -96,6 +96,14 @@ const Bidding: React.FC = () => {
     enabled: !!activeSession,
   });
 
+  // Get renewable availability for current year
+  const { data: renewableAvailability } = useQuery({
+    queryKey: ['renewable-availability', activeSession?.id, activeSession?.current_year],
+    queryFn: () => currentSession ? 
+      ElectricityMarketAPI.getRenewableAvailability(currentSession.id, currentSession.current_year) : null,
+    enabled: !!activeSession,
+  });
+
   // Get plant economics for selected plant
   const { data: plantEconomics } = useQuery({
     queryKey: ['plant-economics', activeSession?.id, selectedPlant, activeSession?.current_year],
@@ -669,14 +677,52 @@ const Bidding: React.FC = () => {
                 </div>
               )}
 
+              {/* Renewable Availability */}
+              {renewableAvailability && (
+                <div className="bg-gray-700 rounded-lg p-4">
+                  <h4 className="font-medium text-white mb-3 flex items-center">
+                    <CloudIcon className="w-4 h-4 mr-2" />
+                    Renewable Availability
+                  </h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Solar Conditions:</span>
+                      <span className={`font-medium ${
+                        renewableAvailability.renewable_availability.solar_availability > 1.1 ? 'text-green-400' :
+                        renewableAvailability.renewable_availability.solar_availability < 0.9 ? 'text-red-400' :
+                        'text-yellow-400'
+                      }`}>
+                        {(renewableAvailability.renewable_availability.solar_availability * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Wind Conditions:</span>
+                      <span className={`font-medium ${
+                        renewableAvailability.renewable_availability.wind_availability > 1.1 ? 'text-green-400' :
+                        renewableAvailability.renewable_availability.wind_availability < 0.9 ? 'text-red-400' :
+                        'text-yellow-400'
+                      }`}>
+                        {(renewableAvailability.renewable_availability.wind_availability * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-gray-600">
+                      <p className="text-xs text-gray-300">
+                        {renewableAvailability.renewable_availability.weather_description}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
                 <h4 className="font-medium text-blue-300 mb-2">Bidding Tips</h4>
                 <ul className="text-sm text-gray-300 space-y-1">
                   <li>• Price competitively but above marginal cost</li>
                   <li>• Peak periods typically have higher clearing prices</li>
                   <li>• Consider your competitors' likely strategies</li>
-                  <li>• Renewable plants often bid at $0-10/MWh</li>
-                  <li>• Storage can provide grid services at premium prices</li>
+                  {renewableAvailability && renewableAvailability.impact_analysis.recommendations.map((rec: string, index: number) => (
+                    <li key={index}>• {rec}</li>
+                  ))}
                 </ul>
               </div>
             </div>
