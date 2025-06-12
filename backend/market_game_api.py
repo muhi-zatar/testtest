@@ -1,19 +1,17 @@
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, Enum as SQLEnum, ForeignKey
+from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Text, Enum as SQLEnum, JSON, Boolean
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session, relationship
-from sqlalchemy.dialects.postgresql import UUID
-from datetime import datetime
-from typing import List, Optional, Dict, Any
+from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from datetime import datetime
 from enum import Enum
-import uuid
 import json
-import traceback
+import uuid
 
 # Database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./electricity_market.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./electricity_market_yearly.db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -66,9 +64,9 @@ class DBUser(Base):
     id = Column(String, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     user_type = Column(SQLEnum(UserTypeEnum))
-    budget = Column(Float, default=0.0)
+    budget = Column(Float, default=2000000000.0)  # $2B default
     debt = Column(Float, default=0.0)
-    equity = Column(Float, default=0.0)
+    equity = Column(Float, default=2000000000.0)  # $2B default
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class DBGameSession(Base):
@@ -76,10 +74,10 @@ class DBGameSession(Base):
     
     id = Column(String, primary_key=True, index=True)
     name = Column(String)
-    operator_id = Column(String, ForeignKey("users.id"))
+    operator_id = Column(String)
+    current_year = Column(Integer, default=2025)
     start_year = Column(Integer, default=2025)
     end_year = Column(Integer, default=2035)
-    current_year = Column(Integer, default=2025)
     state = Column(SQLEnum(GameStateEnum), default=GameStateEnum.setup)
     carbon_price_per_ton = Column(Float, default=50.0)
     demand_profile = Column(Text)  # JSON string
@@ -90,8 +88,8 @@ class DBPowerPlant(Base):
     __tablename__ = "power_plants"
     
     id = Column(String, primary_key=True, index=True)
-    utility_id = Column(String, ForeignKey("users.id"))
-    game_session_id = Column(String, ForeignKey("game_sessions.id"))
+    utility_id = Column(String)
+    game_session_id = Column(String)
     name = Column(String)
     plant_type = Column(SQLEnum(PlantTypeEnum))
     capacity_mw = Column(Float)
@@ -106,16 +104,17 @@ class DBPowerPlant(Base):
     heat_rate = Column(Float, nullable=True)
     fuel_type = Column(String, nullable=True)
     min_generation_mw = Column(Float, default=0.0)
-    maintenance_years = Column(Text)  # JSON array of years
+    maintenance_years = Column(Text, nullable=True)  # JSON string
 
 class DBYearlyBid(Base):
     __tablename__ = "yearly_bids"
     
-    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
-    utility_id = Column(String, ForeignKey("users.id"))
-    game_session_id = Column(String, ForeignKey("game_sessions.id"))
-    plant_id = Column(String, ForeignKey("power_plants.id"))
+    id = Column(String, primary_key=True, index=True)
+    utility_id = Column(String)
+    plant_id = Column(String)
+    game_session_id = Column(String)
     year = Column(Integer)
+    market_type = Column(SQLEnum(MarketTypeEnum), default=MarketTypeEnum.day_ahead)
     off_peak_quantity = Column(Float)
     shoulder_quantity = Column(Float)
     peak_quantity = Column(Float)
@@ -128,61 +127,96 @@ class DBMarketResult(Base):
     __tablename__ = "market_results"
     
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
-    game_session_id = Column(String, ForeignKey("game_sessions.id"))
+    game_session_id = Column(String)
     year = Column(Integer)
     period = Column(SQLEnum(LoadPeriodEnum))
     clearing_price = Column(Float)
     cleared_quantity = Column(Float)
     total_energy = Column(Float)
-    accepted_supply_bids = Column(Text)  # JSON array of bid IDs
+    accepted_supply_bids = Column(Text)  # JSON string
     marginal_plant = Column(String, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Pydantic Models
+class UserCreate(BaseModel):
+    username: str
+    user_type: UserTypeEnum
 
-# Try to import and setup game orchestrator
-try:
-    from game_orchestrator import YearlyGameOrchestrator, add_orchestration_endpoints
-    print("✅ Game orchestrator imported successfully")
-    
-    # Initialize orchestrator
-    orchestrator = YearlyGameOrchestrator(SessionLocal())
-    print("✅ Game orchestrator initialized")
-    
-    # This will be called after app is created
-    _orchestrator = orchestrator
-except ImportError as e:
-    print(f"⚠️ Game orchestrator not available: {e}")
-    _orchestrator = None
-except Exception as e:
-    print(f"❌ Error setting up game orchestrator: {e}")
-    _orchestrator = None
+class UserResponse(BaseModel):
+    id: str
+    username: str
+    user_type: UserTypeEnum
+    budget: float
+    debt: float
+    equity: float
 
-# Dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+class GameSessionCreate(BaseModel):
+    name: str
+    operator_id: str
+    start_year: Optional[int] = 2025
+    end_year: Optional[int] = 2035
+    carbon_price_per_ton: Optional[float] = 50.0
 
-# FastAPI app
-app = FastAPI(title="Electricity Market Game API", version="2.0.0")
+class GameSessionResponse(BaseModel):
+    id: str
+    name: str
+    operator_id: str
+    current_year: int
+    start_year: int
+    end_year: int
+    state: GameStateEnum
+    carbon_price_per_ton: float
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    PLANT_TEMPLATES, DEFAULT_FUEL_PRICES, DEFAULT_RENEWABLE_AVAILABILITY
-)
+class PowerPlantCreate(BaseModel):
+    name: str
+    plant_type: PlantTypeEnum
+    capacity_mw: float
+    construction_start_year: int
+    commissioning_year: int
+    retirement_year: int
+
+class PowerPlantResponse(BaseModel):
+    id: str
+    utility_id: str
+    name: str
+    plant_type: PlantTypeEnum
+    capacity_mw: float
+    construction_start_year: int
+    commissioning_year: int
+    retirement_year: int
+    status: PlantStatusEnum
+    capital_cost_total: float
+    fixed_om_annual: float
+    variable_om_per_mwh: float
+    capacity_factor: float
+    heat_rate: Optional[float]
+    fuel_type: Optional[str]
+
+class YearlyBidCreate(BaseModel):
+    plant_id: str
+    year: int
+    off_peak_quantity: float
+    shoulder_quantity: float
+    peak_quantity: float
+    off_peak_price: float
+    shoulder_price: float
+    peak_price: float
+
+class YearlyBidResponse(BaseModel):
+    id: str
+    utility_id: str
+    plant_id: str
+    year: int
+    off_peak_quantity: float
+    shoulder_quantity: float
+    peak_quantity: float
+    off_peak_price: float
+    shoulder_price: float
+    peak_price: float
 
 # Plant templates data
 PLANT_TEMPLATES_DATA = {
     "coal": {
-        "plant_type": "coal",
         "name": "Supercritical Coal",
         "overnight_cost_per_kw": 4500,
         "construction_time_years": 4,
@@ -196,7 +230,6 @@ PLANT_TEMPLATES_DATA = {
         "co2_emissions_tons_per_mwh": 0.95
     },
     "natural_gas_cc": {
-        "plant_type": "natural_gas_cc",
         "name": "Natural Gas Combined Cycle",
         "overnight_cost_per_kw": 1200,
         "construction_time_years": 3,
@@ -210,7 +243,6 @@ PLANT_TEMPLATES_DATA = {
         "co2_emissions_tons_per_mwh": 0.35
     },
     "natural_gas_ct": {
-        "plant_type": "natural_gas_ct",
         "name": "Natural Gas Combustion Turbine",
         "overnight_cost_per_kw": 800,
         "construction_time_years": 2,
@@ -224,7 +256,6 @@ PLANT_TEMPLATES_DATA = {
         "co2_emissions_tons_per_mwh": 0.55
     },
     "nuclear": {
-        "plant_type": "nuclear",
         "name": "Advanced Nuclear",
         "overnight_cost_per_kw": 8500,
         "construction_time_years": 7,
@@ -238,7 +269,6 @@ PLANT_TEMPLATES_DATA = {
         "co2_emissions_tons_per_mwh": 0.0
     },
     "solar": {
-        "plant_type": "solar",
         "name": "Utility Scale Solar PV",
         "overnight_cost_per_kw": 1400,
         "construction_time_years": 2,
@@ -252,7 +282,6 @@ PLANT_TEMPLATES_DATA = {
         "co2_emissions_tons_per_mwh": 0.0
     },
     "wind_onshore": {
-        "plant_type": "wind_onshore",
         "name": "Onshore Wind",
         "overnight_cost_per_kw": 1650,
         "construction_time_years": 2,
@@ -266,7 +295,6 @@ PLANT_TEMPLATES_DATA = {
         "co2_emissions_tons_per_mwh": 0.0
     },
     "wind_offshore": {
-        "plant_type": "wind_offshore",
         "name": "Offshore Wind",
         "overnight_cost_per_kw": 4200,
         "construction_time_years": 4,
@@ -280,7 +308,6 @@ PLANT_TEMPLATES_DATA = {
         "co2_emissions_tons_per_mwh": 0.0
     },
     "battery": {
-        "plant_type": "battery",
         "name": "Lithium-Ion Battery Storage",
         "overnight_cost_per_kw": 1500,
         "construction_time_years": 1,
@@ -305,294 +332,99 @@ DEFAULT_FUEL_PRICES = {
     "2030": {"coal": 2.75, "natural_gas": 5.20, "uranium": 0.80}
 }
 
-# Add orchestration endpoints if available
-if _orchestrator:
+# Default renewable availability
+DEFAULT_RENEWABLE_AVAILABILITY = {
+    "2025": {"solar_availability": 1.0, "wind_availability": 1.0, "weather_description": "Normal weather conditions"},
+    "2026": {"solar_availability": 1.1, "wind_availability": 0.9, "weather_description": "Above-average solar, below-average wind"},
+    "2027": {"solar_availability": 0.8, "wind_availability": 1.2, "weather_description": "Cloudy year, strong wind patterns"},
+    "2028": {"solar_availability": 1.2, "wind_availability": 1.1, "weather_description": "Excellent renewable conditions"},
+    "2029": {"solar_availability": 0.9, "wind_availability": 0.8, "weather_description": "Challenging renewable year"},
+    "2030": {"solar_availability": 1.0, "wind_availability": 1.0, "weather_description": "Return to normal conditions"}
+}
+
+# Database dependency
+def get_db():
+    db = SessionLocal()
     try:
-        add_orchestration_endpoints(app, _orchestrator)
-        print("✅ Orchestration endpoints added successfully")
-    except Exception as e:
-        print(f"❌ Error adding orchestration endpoints: {e}")
+        yield db
+    finally:
+        db.close()
 
-# Pydantic models
-class UserCreate(BaseModel):
-    username: str
-    user_type: UserTypeEnum
+# Create FastAPI app
+app = FastAPI(title="Electricity Market Game API", version="2.0.0")
 
-class GameSessionCreate(BaseModel):
-    name: str
-    operator_id: str
-    start_year: Optional[int] = 2025
-    end_year: Optional[int] = 2035
-    carbon_price_per_ton: Optional[float] = 50.0
-
-class PowerPlantCreate(BaseModel):
-    name: str
-    plant_type: PlantTypeEnum
-    capacity_mw: float
-    construction_start_year: int
-    commissioning_year: int
-    retirement_year: int
-
-class YearlyBidCreate(BaseModel):
-    plant_id: str
-    year: int
-    off_peak_quantity: float
-    shoulder_quantity: float
-    peak_quantity: float
-    off_peak_price: float
-    shoulder_price: float
-    peak_price: float
-
-class PortfolioAssignment(BaseModel):
-    utility_id: str
-    plants: List[Dict[str, Any]]
-
-# Manual orchestration endpoints (fallback if orchestrator import fails)
-@app.post("/game-sessions/{session_id}/start-year-planning/{year}")
-async def start_year_planning_fallback(session_id: str, year: int, db: Session = Depends(get_db)):
-    """Fallback endpoint for starting year planning"""
-    try:
-        session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-        if not session:
-            raise HTTPException(status_code=404, detail="Game session not found")
-        
-        session.state = GameStateEnum.year_planning
-        session.current_year = year
-        db.commit()
-        
-        return {
-            "status": "year_planning_started",
-            "year": year,
-            "message": f"Year {year} planning phase is open",
-            "session_state": session.state
-        }
-    except Exception as e:
-        print(f"Error in start_year_planning: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/game-sessions/{session_id}/open-annual-bidding/{year}")
-async def open_annual_bidding_fallback(session_id: str, year: int, db: Session = Depends(get_db)):
-    """Fallback endpoint for opening annual bidding"""
-    try:
-        session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-        if not session:
-            raise HTTPException(status_code=404, detail="Game session not found")
-        
-        session.state = GameStateEnum.bidding_open
-        db.commit()
-        
-        # Get available plants for bidding
-        plants = db.query(DBPowerPlant).filter(
-            DBPowerPlant.game_session_id == session_id,
-            DBPowerPlant.status == PlantStatusEnum.operating,
-            DBPowerPlant.commissioning_year <= year,
-            DBPowerPlant.retirement_year > year
-        ).all()
-        
-        return {
-            "status": "annual_bidding_open",
-            "year": year,
-            "message": f"Submit bids for all load periods in {year}",
-            "load_periods": {
-                "off_peak": {"hours": 5000, "description": "Night and weekend hours"},
-                "shoulder": {"hours": 2500, "description": "Daytime non-peak hours"},
-                "peak": {"hours": 1260, "description": "Evening and high-demand hours"}
-            },
-            "available_plants": len(plants),
-            "session_state": session.state
-        }
-    except Exception as e:
-        print(f"Error in open_annual_bidding: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/game-sessions/{session_id}/clear-annual-markets/{year}")
-async def clear_annual_markets_fallback(session_id: str, year: int, db: Session = Depends(get_db)):
-    """Fallback endpoint for clearing annual markets"""
-    try:
-        session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-        if not session:
-            raise HTTPException(status_code=404, detail="Game session not found")
-        
-        # Get all bids for this year
-        bids = db.query(DBYearlyBid).filter(
-            DBYearlyBid.game_session_id == session_id,
-            DBYearlyBid.year == year
-        ).all()
-        
-        if not bids:
-            raise HTTPException(status_code=400, detail=f"No bids found for year {year}")
-        
-        # Simple market clearing (just set some mock results)
-        session.state = GameStateEnum.market_clearing
-        db.commit()
-        
-        # Create mock market results for each period
-        periods = ['off_peak', 'shoulder', 'peak']
-        clearing_prices = [45.0, 55.0, 75.0]  # Mock prices
-        
-        results = {}
-        for i, period in enumerate(periods):
-            # Calculate total quantity bid for this period
-            if period == 'off_peak':
-                total_quantity = sum(bid.off_peak_quantity for bid in bids)
-            elif period == 'shoulder':
-                total_quantity = sum(bid.shoulder_quantity for bid in bids)
-            else:  # peak
-                total_quantity = sum(bid.peak_quantity for bid in bids)
-            
-            # Create market result
-            market_result = DBMarketResult(
-                game_session_id=session_id,
-                year=year,
-                period=LoadPeriodEnum(period),
-                clearing_price=clearing_prices[i],
-                cleared_quantity=total_quantity,
-                total_energy=total_quantity * (5000 if period == 'off_peak' else 2500 if period == 'shoulder' else 1260),
-                accepted_supply_bids=json.dumps([bid.id for bid in bids])
-            )
-            db.add(market_result)
-            
-            results[period] = {
-                "clearing_price": clearing_prices[i],
-                "cleared_quantity": total_quantity,
-                "total_energy": market_result.total_energy,
-                "accepted_bids": len(bids)
-            }
-        
-        db.commit()
-        
-        return {
-            "status": "annual_markets_cleared",
-            "year": year,
-            "results": results,
-            "message": f"Markets cleared for year {year}",
-            "session_state": session.state
-        }
-    except Exception as e:
-        print(f"Error in clear_annual_markets: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/game-sessions/{session_id}/complete-year/{year}")
-async def complete_year_fallback(session_id: str, year: int, db: Session = Depends(get_db)):
-    """Fallback endpoint for completing a year"""
-    try:
-        session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-        if not session:
-            raise HTTPException(status_code=404, detail="Game session not found")
-        
-        # Check if game should continue
-        if year >= session.end_year:
-            session.state = GameStateEnum.game_complete
-            message = f"Game completed! Final results for {session.start_year}-{session.end_year}"
-        else:
-            session.state = GameStateEnum.year_complete
-            message = f"Year {year} completed. Preparing for {year + 1}"
-        
-        db.commit()
-        
-        return {
-            "status": "year_completed",
-            "year": year,
-            "message": message,
-            "session_state": session.state
-        }
-    except Exception as e:
-        print(f"Error in complete_year: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # API Endpoints
-
 @app.get("/health")
 async def health_check():
     return {
         "status": "healthy",
         "version": "2.0.0",
         "framework": "FastAPI",
-        "timestamp": datetime.utcnow().isoformat()
+        "database": "SQLite",
+        "features": ["yearly_simulation", "renewable_availability", "plant_retirement"]
     }
 
-# User Management
-@app.post("/users")
+@app.post("/users", response_model=UserResponse)
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    try:
-        # Check if user already exists
-        existing_user = db.query(DBUser).filter(DBUser.username == user.username).first()
-        if existing_user:
-            # If user exists, return the existing user instead of creating a new one
-            return {
-                "id": existing_user.id,
-                "username": existing_user.username,
-                "user_type": existing_user.user_type,
-                "budget": existing_user.budget,
-                "debt": existing_user.debt,
-                "equity": existing_user.equity,
-                "message": "User already exists, returning existing user"
-            }
-        
-        # Set default budgets based on user type
-        if user.user_type == UserTypeEnum.operator:
-            budget = 10000000000  # $10B for operator
-            debt = 0.0
-            equity = 10000000000
-        else:  # utility
-            budget = 2000000000   # $2B for utility
-            debt = 0.0
-            equity = 2000000000
-        
-        db_user = DBUser(
-            id=str(uuid.uuid4()),
-            username=user.username,
-            user_type=user.user_type,
-            budget=budget,
-            debt=debt,
-            equity=equity
-        )
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        
-        return {
-            "id": db_user.id,
-            "username": db_user.username,
-            "user_type": db_user.user_type,
-            "budget": db_user.budget,
-            "debt": db_user.debt,
-            "equity": db_user.equity
-        }
-    except Exception as e:
-        print(f"Error creating user: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    # Generate unique ID
+    user_id = f"{user.user_type}_{user.username}_{str(uuid.uuid4())[:8]}"
+    
+    db_user = DBUser(
+        id=user_id,
+        username=user.username,
+        user_type=user.user_type
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    
+    return UserResponse(
+        id=db_user.id,
+        username=db_user.username,
+        user_type=db_user.user_type,
+        budget=db_user.budget,
+        debt=db_user.debt,
+        equity=db_user.equity
+    )
 
-# Add endpoint to get all users
-@app.get("/users")
+@app.get("/users", response_model=List[UserResponse])
 async def get_all_users(db: Session = Depends(get_db)):
     users = db.query(DBUser).all()
-    return [
-        {
-            "id": user.id,
-            "username": user.username,
-            "user_type": user.user_type,
-            "budget": user.budget,
-            "debt": user.debt,
-            "equity": user.equity,
-            "created_at": user.created_at.isoformat()
-        } for user in users
-    ]
+    return [UserResponse(
+        id=user.id,
+        username=user.username,
+        user_type=user.user_type,
+        budget=user.budget,
+        debt=user.debt,
+        equity=user.equity
+    ) for user in users]
 
-@app.get("/users/{user_id}")
+@app.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(user_id: str, db: Session = Depends(get_db)):
     user = db.query(DBUser).filter(DBUser.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
+    
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        user_type=user.user_type,
+        budget=user.budget,
+        debt=user.debt,
+        equity=user.equity
+    )
 
 @app.get("/users/{user_id}/financial-summary")
-async def get_user_financial_summary(
-    user_id: str, 
-    game_session_id: str = Query(...),
-    db: Session = Depends(get_db)
-):
+async def get_user_financial_summary(user_id: str, game_session_id: str = Query(...), db: Session = Depends(get_db)):
     user = db.query(DBUser).filter(DBUser.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -618,92 +450,63 @@ async def get_user_financial_summary(
         "total_capacity_mw": total_capacity
     }
 
-# Game Session Management
-@app.post("/game-sessions")
+@app.post("/game-sessions", response_model=GameSessionResponse)
 async def create_game_session(session: GameSessionCreate, db: Session = Depends(get_db)):
-    try:
-        # Default demand profile
-        demand_profile = {
-            "off_peak_hours": 5000,
-            "shoulder_hours": 2500,
-            "peak_hours": 1260,
-            "off_peak_demand": 1200,
-            "shoulder_demand": 1800,
-            "peak_demand": 2400,
-            "demand_growth_rate": 0.02
-        }
-        
-        db_session = DBGameSession(
-            id=str(uuid.uuid4()),
-            name=session.name,
-            operator_id=session.operator_id,
-            start_year=session.start_year,
-            end_year=session.end_year,
-            current_year=session.start_year,
-            carbon_price_per_ton=session.carbon_price_per_ton,
-            demand_profile=json.dumps(demand_profile),
-            fuel_prices=json.dumps(DEFAULT_FUEL_PRICES)
-        )
-        db.add(db_session)
-        db.commit()
-        db.refresh(db_session)
-        
-        return {
-            "id": db_session.id,
-            "name": db_session.name,
-            "operator_id": db_session.operator_id,
-            "start_year": db_session.start_year,
-            "end_year": db_session.end_year,
-            "current_year": db_session.current_year,
-            "state": db_session.state,
-            "carbon_price_per_ton": db_session.carbon_price_per_ton
-        }
-    except Exception as e:
-        print(f"Error creating game session: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    session_id = str(uuid.uuid4())
+    
+    # Create default demand profile
+    demand_profile = {
+        "off_peak_hours": 5000,
+        "shoulder_hours": 2500,
+        "peak_hours": 1260,
+        "off_peak_demand": 1200,
+        "shoulder_demand": 1800,
+        "peak_demand": 2400,
+        "demand_growth_rate": 0.02
+    }
+    
+    db_session = DBGameSession(
+        id=session_id,
+        name=session.name,
+        operator_id=session.operator_id,
+        start_year=session.start_year,
+        end_year=session.end_year,
+        current_year=session.start_year,
+        carbon_price_per_ton=session.carbon_price_per_ton,
+        demand_profile=json.dumps(demand_profile),
+        fuel_prices=json.dumps(DEFAULT_FUEL_PRICES)
+    )
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
+    
+    return GameSessionResponse(
+        id=db_session.id,
+        name=db_session.name,
+        operator_id=db_session.operator_id,
+        current_year=db_session.current_year,
+        start_year=db_session.start_year,
+        end_year=db_session.end_year,
+        state=db_session.state,
+        carbon_price_per_ton=db_session.carbon_price_per_ton
+    )
 
-@app.get("/game-sessions/{session_id}")
+@app.get("/game-sessions/{session_id}", response_model=GameSessionResponse)
 async def get_game_session(session_id: str, db: Session = Depends(get_db)):
     session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Game session not found")
-    return session
-
-@app.put("/game-sessions/{session_id}/state")
-async def update_game_state(
-    session_id: str, 
-    new_state: GameStateEnum = Query(...),
-    db: Session = Depends(get_db)
-):
-    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Game session not found")
     
-    session.state = new_state
-    db.commit()
-    
-    return {"message": f"Game state updated to {new_state}", "state": new_state}
-
-@app.put("/game-sessions/{session_id}/advance-year")
-async def advance_year(session_id: str, db: Session = Depends(get_db)):
-    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Game session not found")
-    
-    if session.current_year >= session.end_year:
-        session.state = GameStateEnum.game_complete
-    else:
-        session.current_year += 1
-        session.state = GameStateEnum.year_planning
-    
-    db.commit()
-    
-    return {
-        "current_year": session.current_year,
-        "state": session.state,
-        "message": f"Advanced to year {session.current_year}"
-    }
+    return GameSessionResponse(
+        id=session.id,
+        name=session.name,
+        operator_id=session.operator_id,
+        current_year=session.current_year,
+        start_year=session.start_year,
+        end_year=session.end_year,
+        state=session.state,
+        carbon_price_per_ton=session.carbon_price_per_ton
+    )
 
 @app.get("/game-sessions/{session_id}/dashboard")
 async def get_game_dashboard(session_id: str, db: Session = Depends(get_db)):
@@ -714,153 +517,144 @@ async def get_game_dashboard(session_id: str, db: Session = Depends(get_db)):
     # Get all plants in this session
     plants = db.query(DBPowerPlant).filter(DBPowerPlant.game_session_id == session_id).all()
     
-    # Get recent market results
-    recent_results = db.query(DBMarketResult).filter(
-        DBMarketResult.game_session_id == session_id
-    ).order_by(DBMarketResult.timestamp.desc()).limit(10).all()
-    
-    # Calculate market stats
-    total_capacity = sum(plant.capacity_mw for plant in plants if plant.status == PlantStatusEnum.operating)
-    operating_plants = len([p for p in plants if p.status == PlantStatusEnum.operating])
-    
-    # Get demand for current year
-    demand_data = json.loads(session.demand_profile)
-    year_offset = session.current_year - session.start_year
-    growth_factor = (1 + demand_data["demand_growth_rate"]) ** year_offset
-    
-    current_demand = {
-        "off_peak": demand_data["off_peak_demand"] * growth_factor,
-        "shoulder": demand_data["shoulder_demand"] * growth_factor,
-        "peak": demand_data["peak_demand"] * growth_factor
-    }
-    
-    # Get utilities count
+    # Get all utilities
     utilities = db.query(DBUser).filter(DBUser.user_type == UserTypeEnum.utility).all()
-    utility_count = len([u for u in utilities if any(p.utility_id == u.id for p in plants)])
+    
+    # Calculate summary statistics
+    total_capacity = sum(plant.capacity_mw for plant in plants if plant.status == PlantStatusEnum.operating)
+    total_investment = sum(plant.capital_cost_total for plant in plants)
     
     return {
-        "session_info": {
+        "session": {
             "id": session.id,
             "name": session.name,
             "current_year": session.current_year,
-            "start_year": session.start_year,
-            "end_year": session.end_year,
             "state": session.state,
             "carbon_price_per_ton": session.carbon_price_per_ton
         },
         "market_stats": {
             "total_capacity_mw": total_capacity,
-            "operating_plants": operating_plants,
-            "capacity_margin": (total_capacity - max(current_demand.values())) / max(current_demand.values()) if max(current_demand.values()) > 0 else 0
+            "total_plants": len(plants),
+            "active_utilities": len(utilities),
+            "total_investment": total_investment
         },
-        "participants": {
-            "total_utilities": utility_count,
-            "utilities": [{"id": u.id, "username": u.username} for u in utilities]
-        },
-        "current_demand_mw": current_demand,
-        "recent_results": [
+        "recent_investments": [
             {
-                "year": result.year,
-                "period": result.period.value,
-                "clearing_price": result.clearing_price,
-                "cleared_quantity": result.cleared_quantity,
-                "total_energy": result.total_energy,
-                "timestamp": result.timestamp.isoformat()
-            } for result in recent_results
+                "plant_type": plant.plant_type.value,
+                "capacity_mw": plant.capacity_mw,
+                "utility_id": plant.utility_id,
+                "commissioning_year": plant.commissioning_year
+            }
+            for plant in plants[-5:]  # Last 5 plants
         ]
     }
 
-# Plant Templates
 @app.get("/plant-templates")
 async def get_plant_templates():
-    return list(PLANT_TEMPLATES_DATA.values())
+    templates = []
+    for plant_type, data in PLANT_TEMPLATES_DATA.items():
+        template = {
+            "plant_type": plant_type,
+            **data
+        }
+        templates.append(template)
+    return templates
 
 @app.get("/plant-templates/{plant_type}")
 async def get_plant_template(plant_type: str):
     if plant_type not in PLANT_TEMPLATES_DATA:
         raise HTTPException(status_code=404, detail="Plant template not found")
-    return PLANT_TEMPLATES_DATA[plant_type]
+    
+    return {
+        "plant_type": plant_type,
+        **PLANT_TEMPLATES_DATA[plant_type]
+    }
 
-# Power Plant Management
-@app.post("/game-sessions/{session_id}/plants")
+@app.post("/game-sessions/{session_id}/plants", response_model=PowerPlantResponse)
 async def create_power_plant(
-    session_id: str,
-    plant: PowerPlantCreate,
+    session_id: str, 
+    plant: PowerPlantCreate, 
     utility_id: str = Query(...),
     db: Session = Depends(get_db)
 ):
-    try:
-        # Get the plant template for cost calculations
-        if plant.plant_type.value not in PLANT_TEMPLATES_DATA:
-            raise HTTPException(status_code=400, detail="Invalid plant type")
-        
-        template = PLANT_TEMPLATES_DATA[plant.plant_type.value]
-        capacity_kw = plant.capacity_mw * 1000
-        
-        # Calculate costs based on template
-        capital_cost_total = capacity_kw * template["overnight_cost_per_kw"]
-        fixed_om_annual = capacity_kw * template["fixed_om_per_kw_year"]
-        
-        # Determine initial status
-        session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-        if not session:
-            raise HTTPException(status_code=404, detail="Game session not found")
-        
-        status = PlantStatusEnum.under_construction if plant.commissioning_year > session.current_year else PlantStatusEnum.operating
-        
-        db_plant = DBPowerPlant(
-            id=str(uuid.uuid4()),
-            utility_id=utility_id,
-            game_session_id=session_id,
-            name=plant.name,
-            plant_type=plant.plant_type,
-            capacity_mw=plant.capacity_mw,
-            construction_start_year=plant.construction_start_year,
-            commissioning_year=plant.commissioning_year,
-            retirement_year=plant.retirement_year,
-            status=status,
-            capital_cost_total=capital_cost_total,
-            fixed_om_annual=fixed_om_annual,
-            variable_om_per_mwh=template["variable_om_per_mwh"],
-            capacity_factor=template["capacity_factor_base"],
-            heat_rate=template.get("heat_rate"),
-            fuel_type=template.get("fuel_type"),
-            min_generation_mw=plant.capacity_mw * template["min_generation_pct"],
-            maintenance_years=json.dumps([])
-        )
-        
-        db.add(db_plant)
-        
-        # Update utility finances (70% debt, 30% equity financing)
-        utility = db.query(DBUser).filter(DBUser.id == utility_id).first()
-        if utility:
-            debt_financing = capital_cost_total * 0.7
-            equity_financing = capital_cost_total * 0.3
-            
-            utility.debt += debt_financing
-            utility.budget -= equity_financing
-            utility.equity -= equity_financing
-        
-        db.commit()
-        db.refresh(db_plant)
-        
-        return {
-            "id": db_plant.id,
-            "name": db_plant.name,
-            "plant_type": db_plant.plant_type,
-            "capacity_mw": db_plant.capacity_mw,
-            "capital_cost_total": db_plant.capital_cost_total,
-            "status": db_plant.status,
-            "commissioning_year": db_plant.commissioning_year
-        }
-    except Exception as e:
-        print(f"Error creating power plant: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    # Verify session exists
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    # Verify utility exists
+    utility = db.query(DBUser).filter(DBUser.id == utility_id).first()
+    if not utility:
+        raise HTTPException(status_code=404, detail="Utility not found")
+    
+    # Get plant template
+    template_data = PLANT_TEMPLATES_DATA.get(plant.plant_type.value)
+    if not template_data:
+        raise HTTPException(status_code=404, detail="Plant template not found")
+    
+    # Calculate costs
+    capacity_kw = plant.capacity_mw * 1000
+    capital_cost = capacity_kw * template_data["overnight_cost_per_kw"]
+    fixed_om_annual = capacity_kw * template_data["fixed_om_per_kw_year"]
+    
+    # Check if utility has enough budget (30% equity requirement)
+    equity_required = capital_cost * 0.3
+    if utility.budget < equity_required:
+        raise HTTPException(status_code=400, detail="Insufficient budget for this investment")
+    
+    # Create plant
+    plant_id = str(uuid.uuid4())
+    db_plant = DBPowerPlant(
+        id=plant_id,
+        utility_id=utility_id,
+        game_session_id=session_id,
+        name=plant.name,
+        plant_type=plant.plant_type,
+        capacity_mw=plant.capacity_mw,
+        construction_start_year=plant.construction_start_year,
+        commissioning_year=plant.commissioning_year,
+        retirement_year=plant.retirement_year,
+        status=PlantStatusEnum.under_construction if plant.commissioning_year > session.current_year else PlantStatusEnum.operating,
+        capital_cost_total=capital_cost,
+        fixed_om_annual=fixed_om_annual,
+        variable_om_per_mwh=template_data["variable_om_per_mwh"],
+        capacity_factor=template_data["capacity_factor_base"],
+        heat_rate=template_data.get("heat_rate"),
+        fuel_type=template_data.get("fuel_type"),
+        min_generation_mw=plant.capacity_mw * template_data["min_generation_pct"]
+    )
+    
+    # Update utility finances
+    debt_financing = capital_cost * 0.7
+    utility.budget -= equity_required
+    utility.debt += debt_financing
+    utility.equity -= equity_required
+    
+    db.add(db_plant)
+    db.commit()
+    db.refresh(db_plant)
+    
+    return PowerPlantResponse(
+        id=db_plant.id,
+        utility_id=db_plant.utility_id,
+        name=db_plant.name,
+        plant_type=db_plant.plant_type,
+        capacity_mw=db_plant.capacity_mw,
+        construction_start_year=db_plant.construction_start_year,
+        commissioning_year=db_plant.commissioning_year,
+        retirement_year=db_plant.retirement_year,
+        status=db_plant.status,
+        capital_cost_total=db_plant.capital_cost_total,
+        fixed_om_annual=db_plant.fixed_om_annual,
+        variable_om_per_mwh=db_plant.variable_om_per_mwh,
+        capacity_factor=db_plant.capacity_factor,
+        heat_rate=db_plant.heat_rate,
+        fuel_type=db_plant.fuel_type
+    )
 
-@app.get("/game-sessions/{session_id}/plants")
+@app.get("/game-sessions/{session_id}/plants", response_model=List[PowerPlantResponse])
 async def get_power_plants(
-    session_id: str,
+    session_id: str, 
     utility_id: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
@@ -871,36 +665,32 @@ async def get_power_plants(
     
     plants = query.all()
     
-    return [
-        {
-            "id": plant.id,
-            "utility_id": plant.utility_id,
-            "name": plant.name,
-            "plant_type": plant.plant_type,
-            "capacity_mw": plant.capacity_mw,
-            "construction_start_year": plant.construction_start_year,
-            "commissioning_year": plant.commissioning_year,
-            "retirement_year": plant.retirement_year,
-            "status": plant.status,
-            "capital_cost_total": plant.capital_cost_total,
-            "fixed_om_annual": plant.fixed_om_annual,
-            "variable_om_per_mwh": plant.variable_om_per_mwh,
-            "capacity_factor": plant.capacity_factor,
-            "heat_rate": plant.heat_rate,
-            "fuel_type": plant.fuel_type,
-            "min_generation_mw": plant.min_generation_mw
-        } for plant in plants
-    ]
+    return [PowerPlantResponse(
+        id=plant.id,
+        utility_id=plant.utility_id,
+        name=plant.name,
+        plant_type=plant.plant_type,
+        capacity_mw=plant.capacity_mw,
+        construction_start_year=plant.construction_start_year,
+        commissioning_year=plant.commissioning_year,
+        retirement_year=plant.retirement_year,
+        status=plant.status,
+        capital_cost_total=plant.capital_cost_total,
+        fixed_om_annual=plant.fixed_om_annual,
+        variable_om_per_mwh=plant.variable_om_per_mwh,
+        capacity_factor=plant.capacity_factor,
+        heat_rate=plant.heat_rate,
+        fuel_type=plant.fuel_type
+    ) for plant in plants]
 
 @app.put("/game-sessions/{session_id}/plants/{plant_id}/retire")
 async def retire_plant(
     session_id: str, 
-    plant_id: str,
-    retirement_year: int = Query(..., description="Year to retire the plant"),
+    plant_id: str, 
+    retirement_year: int = Query(...),
     db: Session = Depends(get_db)
 ):
-    """Retire a power plant early"""
-    # Verify game session exists
+    # Verify session exists
     session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Game session not found")
@@ -915,11 +705,11 @@ async def retire_plant(
         raise HTTPException(status_code=404, detail="Plant not found")
     
     # Validate retirement year
-    if retirement_year < session.current_year:
-        raise HTTPException(status_code=400, detail="Cannot retire plant in the past")
+    if retirement_year <= session.current_year:
+        raise HTTPException(status_code=400, detail="Retirement year must be in the future")
     
     if retirement_year >= plant.retirement_year:
-        raise HTTPException(status_code=400, detail="Plant already scheduled to retire earlier or at the same time")
+        raise HTTPException(status_code=400, detail="New retirement year must be earlier than current retirement year")
     
     # Update retirement year
     old_retirement = plant.retirement_year
@@ -932,125 +722,101 @@ async def retire_plant(
     db.commit()
     
     return {
-        "message": f"Plant retirement moved from {old_retirement} to {retirement_year}",
+        "message": f"Plant {plant.name} retirement moved from {old_retirement} to {retirement_year}",
         "plant_id": plant_id,
+        "old_retirement_year": old_retirement,
         "new_retirement_year": retirement_year,
-        "immediate_retirement": retirement_year <= session.current_year
+        "status": plant.status.value
     }
 
-@app.get("/game-sessions/{session_id}/plants/{plant_id}/economics")
-async def get_plant_economics(
-    session_id: str,
-    plant_id: str,
-    year: int = Query(...),
-    db: Session = Depends(get_db)
-):
-    plant = db.query(DBPowerPlant).filter(
-        DBPowerPlant.id == plant_id,
-        DBPowerPlant.game_session_id == session_id
-    ).first()
-    
-    if not plant:
-        raise HTTPException(status_code=404, detail="Plant not found")
-    
-    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Game session not found")
-    
-    # Get fuel prices
-    fuel_prices_data = json.loads(session.fuel_prices)
-    year_fuel_prices = fuel_prices_data.get(str(year), fuel_prices_data.get("2025", {}))
-    
-    # Calculate marginal cost
-    marginal_cost = plant.variable_om_per_mwh
-    fuel_costs = 0
-    
-    if plant.fuel_type and plant.heat_rate:
-        fuel_price = year_fuel_prices.get(plant.fuel_type, 0)
-        fuel_costs = (plant.heat_rate * fuel_price) / 1000  # Convert BTU to MMBtu
-        marginal_cost += fuel_costs
-    
-    # Add carbon cost
-    template = PLANT_TEMPLATES_DATA.get(plant.plant_type.value, {})
-    carbon_cost = template.get("co2_emissions_tons_per_mwh", 0) * session.carbon_price_per_ton
-    marginal_cost += carbon_cost
-    
-    # Calculate annual metrics
-    annual_generation = plant.capacity_mw * plant.capacity_factor * 8760
-    annual_revenue = annual_generation * 55  # Assume $55/MWh average price
-    annual_profit = annual_revenue - plant.fixed_om_annual - (annual_generation * marginal_cost)
-    
-    return {
-        "plant_id": plant_id,
-        "year": year,
-        "marginal_cost_per_mwh": marginal_cost,
-        "fuel_costs": fuel_costs,
-        "carbon_costs": carbon_cost,
-        "annual_generation_mwh": annual_generation,
-        "annual_revenue_estimate": annual_revenue,
-        "annual_fixed_costs": plant.fixed_om_annual,
-        "annual_profit_estimate": annual_profit,
-        "capacity_factor": plant.capacity_factor
-    }
-
-# Bidding System
-@app.post("/game-sessions/{session_id}/bids")
+@app.post("/game-sessions/{session_id}/bids", response_model=YearlyBidResponse)
 async def submit_yearly_bid(
     session_id: str,
     bid: YearlyBidCreate,
     utility_id: str = Query(...),
     db: Session = Depends(get_db)
 ):
-    try:
-        # Check if bid already exists for this plant and year
-        existing_bid = db.query(DBYearlyBid).filter(
-            DBYearlyBid.game_session_id == session_id,
-            DBYearlyBid.utility_id == utility_id,
-            DBYearlyBid.plant_id == bid.plant_id,
-            DBYearlyBid.year == bid.year
-        ).first()
+    # Verify session and plant exist
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    plant = db.query(DBPowerPlant).filter(
+        DBPowerPlant.id == bid.plant_id,
+        DBPowerPlant.utility_id == utility_id,
+        DBPowerPlant.game_session_id == session_id
+    ).first()
+    
+    if not plant:
+        raise HTTPException(status_code=404, detail="Plant not found or not owned by utility")
+    
+    # Check if bid already exists for this plant and year
+    existing_bid = db.query(DBYearlyBid).filter(
+        DBYearlyBid.plant_id == bid.plant_id,
+        DBYearlyBid.year == bid.year,
+        DBYearlyBid.game_session_id == session_id
+    ).first()
+    
+    if existing_bid:
+        # Update existing bid
+        existing_bid.off_peak_quantity = bid.off_peak_quantity
+        existing_bid.shoulder_quantity = bid.shoulder_quantity
+        existing_bid.peak_quantity = bid.peak_quantity
+        existing_bid.off_peak_price = bid.off_peak_price
+        existing_bid.shoulder_price = bid.shoulder_price
+        existing_bid.peak_price = bid.peak_price
+        existing_bid.timestamp = datetime.utcnow()
         
-        if existing_bid:
-            # Update existing bid
-            existing_bid.off_peak_quantity = bid.off_peak_quantity
-            existing_bid.shoulder_quantity = bid.shoulder_quantity
-            existing_bid.peak_quantity = bid.peak_quantity
-            existing_bid.off_peak_price = bid.off_peak_price
-            existing_bid.shoulder_price = bid.shoulder_price
-            existing_bid.peak_price = bid.peak_price
-            existing_bid.timestamp = datetime.utcnow()
-            db_bid = existing_bid
-        else:
-            # Create new bid
-            db_bid = DBYearlyBid(
-                utility_id=utility_id,
-                game_session_id=session_id,
-                plant_id=bid.plant_id,
-                year=bid.year,
-                off_peak_quantity=bid.off_peak_quantity,
-                shoulder_quantity=bid.shoulder_quantity,
-                peak_quantity=bid.peak_quantity,
-                off_peak_price=bid.off_peak_price,
-                shoulder_price=bid.shoulder_price,
-                peak_price=bid.peak_price
-            )
-            db.add(db_bid)
+        db.commit()
+        db.refresh(existing_bid)
         
+        return YearlyBidResponse(
+            id=existing_bid.id,
+            utility_id=existing_bid.utility_id,
+            plant_id=existing_bid.plant_id,
+            year=existing_bid.year,
+            off_peak_quantity=existing_bid.off_peak_quantity,
+            shoulder_quantity=existing_bid.shoulder_quantity,
+            peak_quantity=existing_bid.peak_quantity,
+            off_peak_price=existing_bid.off_peak_price,
+            shoulder_price=existing_bid.shoulder_price,
+            peak_price=existing_bid.peak_price
+        )
+    else:
+        # Create new bid
+        bid_id = str(uuid.uuid4())
+        db_bid = DBYearlyBid(
+            id=bid_id,
+            utility_id=utility_id,
+            plant_id=bid.plant_id,
+            game_session_id=session_id,
+            year=bid.year,
+            off_peak_quantity=bid.off_peak_quantity,
+            shoulder_quantity=bid.shoulder_quantity,
+            peak_quantity=bid.peak_quantity,
+            off_peak_price=bid.off_peak_price,
+            shoulder_price=bid.shoulder_price,
+            peak_price=bid.peak_price
+        )
+        
+        db.add(db_bid)
         db.commit()
         db.refresh(db_bid)
         
-        return {
-            "id": db_bid.id,
-            "plant_id": db_bid.plant_id,
-            "year": db_bid.year,
-            "message": "Bid submitted successfully"
-        }
-    except Exception as e:
-        print(f"Error submitting bid: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return YearlyBidResponse(
+            id=db_bid.id,
+            utility_id=db_bid.utility_id,
+            plant_id=db_bid.plant_id,
+            year=db_bid.year,
+            off_peak_quantity=db_bid.off_peak_quantity,
+            shoulder_quantity=db_bid.shoulder_quantity,
+            peak_quantity=db_bid.peak_quantity,
+            off_peak_price=db_bid.off_peak_price,
+            shoulder_price=db_bid.shoulder_price,
+            peak_price=db_bid.peak_price
+        )
 
-@app.get("/game-sessions/{session_id}/bids")
+@app.get("/game-sessions/{session_id}/bids", response_model=List[YearlyBidResponse])
 async def get_yearly_bids(
     session_id: str,
     year: Optional[int] = Query(None),
@@ -1061,28 +827,25 @@ async def get_yearly_bids(
     
     if year:
         query = query.filter(DBYearlyBid.year == year)
+    
     if utility_id:
         query = query.filter(DBYearlyBid.utility_id == utility_id)
     
     bids = query.all()
     
-    return [
-        {
-            "id": bid.id,
-            "utility_id": bid.utility_id,
-            "plant_id": bid.plant_id,
-            "year": bid.year,
-            "off_peak_quantity": bid.off_peak_quantity,
-            "shoulder_quantity": bid.shoulder_quantity,
-            "peak_quantity": bid.peak_quantity,
-            "off_peak_price": bid.off_peak_price,
-            "shoulder_price": bid.shoulder_price,
-            "peak_price": bid.peak_price,
-            "timestamp": bid.timestamp.isoformat()
-        } for bid in bids
-    ]
+    return [YearlyBidResponse(
+        id=bid.id,
+        utility_id=bid.utility_id,
+        plant_id=bid.plant_id,
+        year=bid.year,
+        off_peak_quantity=bid.off_peak_quantity,
+        shoulder_quantity=bid.shoulder_quantity,
+        peak_quantity=bid.peak_quantity,
+        off_peak_price=bid.off_peak_price,
+        shoulder_price=bid.shoulder_price,
+        peak_price=bid.peak_price
+    ) for bid in bids]
 
-# Market Operations
 @app.get("/game-sessions/{session_id}/fuel-prices/{year}")
 async def get_fuel_prices(session_id: str, year: int, db: Session = Depends(get_db)):
     session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
@@ -1095,69 +858,45 @@ async def get_fuel_prices(session_id: str, year: int, db: Session = Depends(get_
     return {
         "year": year,
         "fuel_prices": year_prices,
-        "carbon_price_per_ton": session.carbon_price_per_ton
+        "currency": "USD/MMBtu"
     }
 
 @app.get("/game-sessions/{session_id}/renewable-availability/{year}")
-async def get_renewable_availability(
-    session_id: str,
-    year: int,
-    db: Session = Depends(get_db)
-):
-    """Get renewable energy availability for a specific year"""
-    # Verify game session exists
+async def get_renewable_availability(session_id: str, year: int, db: Session = Depends(get_db)):
     session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Game session not found")
     
-    # Get renewable availability data
-    availability = DEFAULT_RENEWABLE_AVAILABILITY.get(year)
-    if not availability:
-        # Generate default availability for years not in the data
-        import random
-        availability_data = {
-            "year": year,
-            "solar_availability": round(random.uniform(0.8, 1.2), 2),
-            "wind_availability": round(random.uniform(0.8, 1.2), 2),
-            "weather_description": "Variable weather conditions"
-        }
-    else:
-        availability_data = {
-            "year": availability.year,
-            "solar_availability": availability.solar_availability,
-            "wind_availability": availability.wind_availability,
-            "weather_description": availability.weather_description
-        }
+    # Get renewable availability for the year
+    availability_data = DEFAULT_RENEWABLE_AVAILABILITY.get(str(year), DEFAULT_RENEWABLE_AVAILABILITY.get("2025", {}))
+    
+    # Generate impact analysis
+    solar_impact = "positive" if availability_data["solar_availability"] > 1.05 else "negative" if availability_data["solar_availability"] < 0.95 else "neutral"
+    wind_impact = "positive" if availability_data["wind_availability"] > 1.05 else "negative" if availability_data["wind_availability"] < 0.95 else "neutral"
+    
+    recommendations = []
+    if solar_impact == "positive":
+        recommendations.append("Consider increasing solar capacity bids due to favorable conditions")
+    elif solar_impact == "negative":
+        recommendations.append("Reduce solar capacity bids due to poor weather conditions")
+    
+    if wind_impact == "positive":
+        recommendations.append("Wind conditions are excellent - maximize wind generation bids")
+    elif wind_impact == "negative":
+        recommendations.append("Wind conditions are poor - consider backup thermal generation")
+    
+    if solar_impact == "negative" and wind_impact == "negative":
+        recommendations.append("Both solar and wind conditions are challenging - thermal plants may see higher prices")
     
     return {
+        "year": year,
         "renewable_availability": availability_data,
         "impact_analysis": {
-            "solar_impact": "High" if availability_data["solar_availability"] > 1.1 else 
-                           "Low" if availability_data["solar_availability"] < 0.9 else "Normal",
-            "wind_impact": "High" if availability_data["wind_availability"] > 1.1 else 
-                          "Low" if availability_data["wind_availability"] < 0.9 else "Normal",
-            "recommendations": _get_renewable_recommendations(availability_data)
+            "solar_impact": solar_impact,
+            "wind_impact": wind_impact,
+            "recommendations": recommendations
         }
     }
-
-def _get_renewable_recommendations(availability_data):
-    """Generate recommendations based on renewable availability"""
-    recommendations = []
-    
-    if availability_data["solar_availability"] > 1.1:
-        recommendations.append("Excellent solar conditions - consider aggressive solar bidding")
-    elif availability_data["solar_availability"] < 0.9:
-        recommendations.append("Poor solar conditions - reduce solar capacity bids")
-    
-    if availability_data["wind_availability"] > 1.1:
-        recommendations.append("Strong wind patterns - wind plants can bid at higher capacity")
-    elif availability_data["wind_availability"] < 0.9:
-        recommendations.append("Weak wind conditions - conservative wind bidding recommended")
-    
-    if not recommendations:
-        recommendations.append("Normal renewable conditions - bid at standard capacity factors")
-    
-    return recommendations
 
 @app.get("/game-sessions/{session_id}/market-results")
 async def get_market_results(
@@ -1170,10 +909,11 @@ async def get_market_results(
     
     if year:
         query = query.filter(DBMarketResult.year == year)
-    if period:
-        query = query.filter(DBMarketResult.period == LoadPeriodEnum(period))
     
-    results = query.order_by(DBMarketResult.timestamp.desc()).all()
+    if period:
+        query = query.filter(DBMarketResult.period == period)
+    
+    results = query.all()
     
     return [
         {
@@ -1185,10 +925,52 @@ async def get_market_results(
             "accepted_supply_bids": json.loads(result.accepted_supply_bids) if result.accepted_supply_bids else [],
             "marginal_plant": result.marginal_plant,
             "timestamp": result.timestamp.isoformat()
-        } for result in results
+        }
+        for result in results
     ]
 
-# Sample Data Creation
+@app.put("/game-sessions/{session_id}/state")
+async def update_game_state(session_id: str, new_state: GameStateEnum = Query(...), db: Session = Depends(get_db)):
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    session.state = new_state
+    db.commit()
+    
+    return {
+        "message": f"Game state updated to {new_state.value}",
+        "session_id": session_id,
+        "new_state": new_state.value
+    }
+
+@app.put("/game-sessions/{session_id}/advance-year")
+async def advance_year(session_id: str, db: Session = Depends(get_db)):
+    session = db.query(DBGameSession).filter(DBGameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    if session.current_year >= session.end_year:
+        session.state = GameStateEnum.game_complete
+        db.commit()
+        return {
+            "message": "Game completed",
+            "session_id": session_id,
+            "current_year": session.current_year,
+            "state": session.state.value
+        }
+    
+    session.current_year += 1
+    session.state = GameStateEnum.year_planning
+    db.commit()
+    
+    return {
+        "message": f"Advanced to year {session.current_year}",
+        "session_id": session_id,
+        "current_year": session.current_year,
+        "state": session.state.value
+    }
+
 @app.post("/sample-data/create")
 async def create_sample_data(db: Session = Depends(get_db)):
     try:
@@ -1202,34 +984,32 @@ async def create_sample_data(db: Session = Depends(get_db)):
                 "utility_ids": ["utility_1", "utility_2", "utility_3"]
             }
         
-        # Create sample operator
+        # Create operator
         operator = DBUser(
             id="operator_1",
             username="instructor",
             user_type=UserTypeEnum.operator,
-            budget=10000000000,  # $10B
+            budget=10000000000,
             debt=0.0,
             equity=10000000000
         )
         db.add(operator)
         
-        # Create sample utilities
-        utility_budgets = [2000000000, 1500000000, 1800000000]  # $2B, $1.5B, $1.8B
-        utility_names = ["PowerCorp Alpha", "EnergyTech Beta", "GreenGrid Gamma"]
-        
-        for i in range(3):
+        # Create utilities
+        utility_budgets = [2000000000, 1500000000, 1800000000]
+        for i in range(1, 4):
             utility = DBUser(
-                id=f"utility_{i+1}",
-                username=utility_names[i],
+                id=f"utility_{i}",
+                username=f"utility_{i}",
                 user_type=UserTypeEnum.utility,
-                budget=utility_budgets[i],
+                budget=utility_budgets[i-1],
                 debt=0.0,
-                equity=utility_budgets[i]
+                equity=utility_budgets[i-1]
             )
             db.add(utility)
         
-        # Create sample game session
-        demand_profile_data = {
+        # Create game session
+        demand_profile = {
             "off_peak_hours": 5000,
             "shoulder_hours": 2500,
             "peak_hours": 1260,
@@ -1248,24 +1028,19 @@ async def create_sample_data(db: Session = Depends(get_db)):
             current_year=2025,
             state=GameStateEnum.setup,
             carbon_price_per_ton=50.0,
-            demand_profile=json.dumps(demand_profile_data),
+            demand_profile=json.dumps(demand_profile),
             fuel_prices=json.dumps(DEFAULT_FUEL_PRICES)
         )
         db.add(game_session)
         
         # Create sample plants
         sample_plants = [
-            # Utility 1: Traditional utility with coal and gas
             ("utility_1", "Riverside Coal Plant", "coal", 600, 2020, 2023, 2050),
             ("utility_1", "Westside Gas CC", "natural_gas_cc", 400, 2021, 2024, 2049),
             ("utility_1", "Peak Gas CT", "natural_gas_ct", 150, 2022, 2025, 2045),
-            
-            # Utility 2: Mixed portfolio with nuclear and renewables
             ("utility_2", "Coastal Nuclear", "nuclear", 1000, 2018, 2025, 2075),
             ("utility_2", "Solar Farm Alpha", "solar", 250, 2023, 2025, 2045),
             ("utility_2", "Wind Farm Beta", "wind_onshore", 200, 2023, 2025, 2045),
-            
-            # Utility 3: Renewable-focused with storage
             ("utility_3", "Mega Solar Project", "solar", 400, 2024, 2026, 2046),
             ("utility_3", "Offshore Wind", "wind_offshore", 300, 2024, 2027, 2047),
             ("utility_3", "Grid Battery Storage", "battery", 100, 2025, 2026, 2036),
@@ -1299,21 +1074,6 @@ async def create_sample_data(db: Session = Depends(get_db)):
             )
             db.add(plant)
         
-        # Update utility finances to reflect existing investments
-        utilities = db.query(DBUser).filter(DBUser.user_type == UserTypeEnum.utility).all()
-        for utility in utilities:
-            plants = db.query(DBPowerPlant).filter(
-                DBPowerPlant.utility_id == utility.id,
-                DBPowerPlant.game_session_id == "sample_game_1"
-            ).all()
-            
-            total_invested = sum(plant.capital_cost_total for plant in plants)
-            
-            # Update financial position (70% debt, 30% equity financing)
-            utility.debt = total_invested * 0.7
-            utility.budget = utility.budget - (total_invested * 0.3)
-            utility.equity = utility.equity - (total_invested * 0.3)
-        
         db.commit()
         
         return {
@@ -1327,209 +1087,8 @@ async def create_sample_data(db: Session = Depends(get_db)):
         }
         
     except Exception as e:
-        print(f"Error creating sample data: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error creating sample data: {str(e)}")
 
-# Portfolio Templates
-PORTFOLIO_TEMPLATES = [
-    {
-        "id": "traditional",
-        "name": "Traditional Utility",
-        "description": "Coal and natural gas focused portfolio with reliable baseload generation",
-        "plants": [
-            {"plant_type": "coal", "capacity_mw": 600, "name": "Coal Baseload Plant"},
-            {"plant_type": "natural_gas_cc", "capacity_mw": 400, "name": "Gas Combined Cycle"},
-            {"plant_type": "natural_gas_ct", "capacity_mw": 150, "name": "Gas Peaker"}
-        ]
-    },
-    {
-        "id": "mixed",
-        "name": "Mixed Generation",
-        "description": "Balanced portfolio with nuclear, renewables, and thermal generation",
-        "plants": [
-            {"plant_type": "nuclear", "capacity_mw": 1000, "name": "Nuclear Baseload"},
-            {"plant_type": "solar", "capacity_mw": 250, "name": "Solar Farm"},
-            {"plant_type": "wind_onshore", "capacity_mw": 200, "name": "Wind Farm"}
-        ]
-    },
-    {
-        "id": "renewable",
-        "name": "Renewable Focus",
-        "description": "Clean energy portfolio with solar, wind, and battery storage",
-        "plants": [
-            {"plant_type": "solar", "capacity_mw": 400, "name": "Large Solar Project"},
-            {"plant_type": "wind_offshore", "capacity_mw": 300, "name": "Offshore Wind"},
-            {"plant_type": "battery", "capacity_mw": 100, "name": "Grid Battery Storage"}
-        ]
-    },
-    {
-        "id": "balanced",
-        "name": "Balanced Portfolio",
-        "description": "Diversified mix across all major technologies",
-        "plants": [
-            {"plant_type": "natural_gas_cc", "capacity_mw": 300, "name": "Gas CC Unit"},
-            {"plant_type": "solar", "capacity_mw": 200, "name": "Solar Array"},
-            {"plant_type": "wind_onshore", "capacity_mw": 150, "name": "Wind Turbines"},
-            {"plant_type": "battery", "capacity_mw": 50, "name": "Energy Storage"}
-        ]
-    }
-]
-
-@app.get("/portfolio-templates")
-async def get_portfolio_templates():
-    """Get available portfolio templates for game setup"""
-    return PORTFOLIO_TEMPLATES
-
-@app.post("/game-sessions/{session_id}/assign-portfolio")
-async def assign_portfolio(
-    session_id: str,
-    portfolio_data: Dict[str, Any],
-    utility_id: str = Query(...),
-    db: Session = Depends(get_db)
-):
-    """Assign a portfolio template to a utility"""
-    try:
-        # Find the portfolio template
-        template = next((t for t in PORTFOLIO_TEMPLATES if t["id"] == portfolio_data.get("template_id")), None)
-        if not template:
-            raise HTTPException(status_code=404, detail="Portfolio template not found")
-        
-        # Create plants for the utility
-        created_plants = []
-        for plant_config in template["plants"]:
-            template_data = PLANT_TEMPLATES_DATA[plant_config["plant_type"]]
-            capacity_kw = plant_config["capacity_mw"] * 1000
-            
-            plant = DBPowerPlant(
-                id=str(uuid.uuid4()),
-                utility_id=utility_id,
-                game_session_id=session_id,
-                name=plant_config["name"],
-                plant_type=PlantTypeEnum(plant_config["plant_type"]),
-                capacity_mw=plant_config["capacity_mw"],
-                construction_start_year=2020,
-                commissioning_year=2025,
-                retirement_year=2025 + template_data["economic_life_years"],
-                status=PlantStatusEnum.operating,
-                capital_cost_total=capacity_kw * template_data["overnight_cost_per_kw"],
-                fixed_om_annual=capacity_kw * template_data["fixed_om_per_kw_year"],
-                variable_om_per_mwh=template_data["variable_om_per_mwh"],
-                capacity_factor=template_data["capacity_factor_base"],
-                heat_rate=template_data.get("heat_rate"),
-                fuel_type=template_data.get("fuel_type"),
-                min_generation_mw=plant_config["capacity_mw"] * template_data["min_generation_pct"],
-                maintenance_years=json.dumps([])
-            )
-            db.add(plant)
-            created_plants.append(plant)
-        
-        # Update utility finances
-        utility = db.query(DBUser).filter(DBUser.id == utility_id).first()
-        if utility:
-            total_investment = sum(plant.capital_cost_total for plant in created_plants)
-            debt_financing = total_investment * 0.7
-            equity_financing = total_investment * 0.3
-            
-            utility.debt += debt_financing
-            utility.budget -= equity_financing
-            utility.equity -= equity_financing
-        
-        db.commit()
-        
-        return {
-            "message": f"Portfolio '{template['name']}' assigned successfully",
-            "plants_created": len(created_plants),
-            "total_capacity": sum(plant.capacity_mw for plant in created_plants),
-            "total_investment": sum(plant.capital_cost_total for plant in created_plants)
-        }
-        
-    except Exception as e:
-        print(f"Error assigning portfolio: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/game-sessions/{session_id}/bulk-assign-portfolios")
-async def bulk_assign_portfolios(
-    session_id: str,
-    assignments: Dict[str, str],
-    db: Session = Depends(get_db)
-):
-    """Assign portfolios to multiple utilities at once"""
-    try:
-        results = []
-        
-        for utility_id, template_id in assignments.items():
-            # Find the portfolio template
-            template = next((t for t in PORTFOLIO_TEMPLATES if t["id"] == template_id), None)
-            if not template:
-                continue
-            
-            # Create plants for the utility
-            created_plants = []
-            for plant_config in template["plants"]:
-                template_data = PLANT_TEMPLATES_DATA[plant_config["plant_type"]]
-                capacity_kw = plant_config["capacity_mw"] * 1000
-                
-                plant = DBPowerPlant(
-                    id=str(uuid.uuid4()),
-                    utility_id=utility_id,
-                    game_session_id=session_id,
-                    name=f"{plant_config['name']} ({utility_id})",
-                    plant_type=PlantTypeEnum(plant_config["plant_type"]),
-                    capacity_mw=plant_config["capacity_mw"],
-                    construction_start_year=2020,
-                    commissioning_year=2025,
-                    retirement_year=2025 + template_data["economic_life_years"],
-                    status=PlantStatusEnum.operating,
-                    capital_cost_total=capacity_kw * template_data["overnight_cost_per_kw"],
-                    fixed_om_annual=capacity_kw * template_data["fixed_om_per_kw_year"],
-                    variable_om_per_mwh=template_data["variable_om_per_mwh"],
-                    capacity_factor=template_data["capacity_factor_base"],
-                    heat_rate=template_data.get("heat_rate"),
-                    fuel_type=template_data.get("fuel_type"),
-                    min_generation_mw=plant_config["capacity_mw"] * template_data["min_generation_pct"],
-                    maintenance_years=json.dumps([])
-                )
-                db.add(plant)
-                created_plants.append(plant)
-            
-            # Update utility finances
-            utility = db.query(DBUser).filter(DBUser.id == utility_id).first()
-            if utility:
-                total_investment = sum(plant.capital_cost_total for plant in created_plants)
-                debt_financing = total_investment * 0.7
-                equity_financing = total_investment * 0.3
-                
-                utility.debt += debt_financing
-                utility.budget -= equity_financing
-                utility.equity -= equity_financing
-            
-            results.append({
-                "utility_id": utility_id,
-                "template": template["name"],
-                "plants_created": len(created_plants),
-                "total_capacity": sum(plant.capacity_mw for plant in created_plants)
-            })
-        
-        db.commit()
-        
-        return {
-            "message": "Portfolios assigned successfully",
-            "assignments": results,
-            "total_utilities": len(results)
-        }
-        
-    except Exception as e:
-        print(f"Error bulk assigning portfolios: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Health check endpoint
-@app.get("/")
-async def root():
-    return {"message": "Electricity Market Game API v2.0", "status": "running"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# Create tables
+Base.metadata.create_all(bind=engine)
