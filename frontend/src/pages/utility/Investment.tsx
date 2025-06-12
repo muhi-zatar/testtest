@@ -135,10 +135,15 @@ const Investment: React.FC = () => {
       toast.success('Investment approved! Plant construction started.');
       queryClient.invalidateQueries({ queryKey: ['utility-plants'] });
       queryClient.invalidateQueries({ queryKey: ['utility-financials'] });
+      queryClient.invalidateQueries({ queryKey: ['investment-analysis'] });
       setShowROICalculator(false);
+      setSelectedPlantType('');
+      setInvestmentCapacity(100);
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to create plant');
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to create plant';
+      console.error('Investment error:', error);
+      toast.error(errorMessage);
     }
   });
 
@@ -211,6 +216,11 @@ const Investment: React.FC = () => {
     const template = templates?.find((t: PlantTemplate) => t.plant_type === selectedPlantType);
     if (!template) return;
 
+    // Check if investment is financially viable
+    if (!simulation.financial_impact.budget_sufficient) {
+      toast.error('Insufficient budget for this investment');
+      return;
+    }
     const plantData = {
       name: `${template.name} ${investmentCapacity}MW`,
       plant_type: selectedPlantType,
@@ -470,10 +480,18 @@ const Investment: React.FC = () => {
             <div className="flex items-end">
               <button
                 onClick={handleInvestment}
-                disabled={!simulation?.financial_impact.budget_sufficient || createPlantMutation.isPending}
+                disabled={
+                  !simulation?.financial_impact.budget_sufficient || 
+                  createPlantMutation.isPending ||
+                  !selectedPlantType ||
+                  investmentCapacity <= 0
+                }
                 className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
               >
-                {createPlantMutation.isPending ? 'Processing...' : 'Approve Investment'}
+                {createPlantMutation.isPending ? 'Processing...' : 
+                 !selectedPlantType ? 'Select Plant Type First' :
+                 !simulation?.financial_impact.budget_sufficient ? 'Insufficient Budget' :
+                 'Approve Investment'}
               </button>
             </div>
           </div>
