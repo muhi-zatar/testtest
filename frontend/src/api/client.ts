@@ -251,6 +251,7 @@ export class ElectricityMarketAPI {
         console.log('Fallback: Getting all users and filtering utilities');
         const usersResponse = await api.get('/users');
         return usersResponse.data.filter((user: any) => user.user_type === 'utility');
+      }
       console.error('❌ API Error:', error.response?.data || error.message);
       
       // Handle 404 errors for game sessions specifically
