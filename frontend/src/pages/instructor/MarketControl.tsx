@@ -16,12 +16,8 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   InformationCircleIcon,
-  BuildingOffice2Icon, 
-  CurrencyDollarIcon,
-  AdjustmentsHorizontalIcon,
-  ArrowsPointingOutIcon,
-  SunIcon,
-  LightBulbIcon
+  BuildingOffice2Icon,
+  CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
 import { 
   LineChart, 
@@ -70,27 +66,6 @@ const MarketControl: React.FC = () => {
   const [showEventModal, setShowEventModal] = useState<boolean>(false);
   const [autoAdvance, setAutoAdvance] = useState<boolean>(false);
   const [selectedUtilities, setSelectedUtilities] = useState<string[]>([]);
-
-  // Market parameter controls
-  const [showParameterModal, setShowParameterModal] = useState<boolean>(false);
-  const [marketParameters, setMarketParameters] = useState({
-    fuelPrices: {
-      coal: 2.50,
-      natural_gas: 4.00,
-      uranium: 0.75
-    },
-    demandProfile: {
-      off_peak_demand: 1200,
-      shoulder_demand: 1800,
-      peak_demand: 2400,
-      demand_growth_rate: 0.02
-    },
-    renewableAvailability: {
-      solar: 1.0,
-      wind: 1.0
-    },
-    carbonPrice: 50
-  });
 
   // Game phases for the current year
   const gamePhases: GamePhase[] = [
@@ -262,26 +237,6 @@ const MarketControl: React.FC = () => {
     onError: () => toast.error('Failed to advance year')
   });
 
-  // Update market parameters mutation
-  const updateMarketParametersMutation = useMutation({
-    mutationFn: (params: any) => {
-      if (!currentSession) throw new Error('No active session');
-      return ElectricityMarketAPI.put(`/game-sessions/${currentSession.id}/market-parameters`, params, {
-        params: { year: currentSession.current_year }
-      });
-    },
-    onSuccess: () => {
-      toast.success('Market parameters updated successfully');
-      setShowParameterModal(false);
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['fuel-prices'] });
-      queryClient.invalidateQueries({ queryKey: ['renewable-availability'] });
-    },
-    onError: () => {
-      toast.error('Failed to update market parameters');
-    }
-  });
-
   // Handle triggering market events
   const triggerEvent = (event: MarketEvent) => {
     // This would integrate with the backend to trigger the event
@@ -291,71 +246,6 @@ const MarketControl: React.FC = () => {
     
     // Simulate event impact
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-  };
-
-  // Load current market parameters when opening the modal
-  useEffect(() => {
-    if (showParameterModal && currentSession) {
-      // Get fuel prices
-      ElectricityMarketAPI.getFuelPrices(currentSession.id, currentSession.current_year)
-        .then(data => {
-          setMarketParameters(prev => ({
-            ...prev,
-            fuelPrices: data.fuel_prices
-          }));
-        })
-        .catch(err => console.error('Error loading fuel prices:', err));
-      
-      // Get renewable availability
-      ElectricityMarketAPI.getRenewableAvailability(currentSession.id, currentSession.current_year)
-        .then(data => {
-          setMarketParameters(prev => ({
-            ...prev,
-            renewableAvailability: {
-              solar: data.renewable_availability.solar_availability,
-              wind: data.renewable_availability.wind_availability
-            }
-          }));
-        })
-        .catch(err => console.error('Error loading renewable availability:', err));
-      
-      // Set carbon price from session
-      setMarketParameters(prev => ({
-        ...prev,
-        carbonPrice: currentSession.carbon_price_per_ton
-      }));
-    }
-  }, [showParameterModal, currentSession]);
-
-  const handleUpdateMarketParameters = () => {
-    if (!currentSession) return;
-    
-    updateMarketParametersMutation.mutate({
-      fuel_prices: marketParameters.fuelPrices,
-      demand_profile: marketParameters.demandProfile,
-      renewable_availability: {
-        solar_availability: marketParameters.renewableAvailability.solar,
-        wind_availability: marketParameters.renewableAvailability.wind,
-        weather_description: getWeatherDescription(marketParameters.renewableAvailability)
-      },
-      carbon_price: marketParameters.carbonPrice
-    });
-  };
-
-  // Generate weather description based on renewable availability
-  const getWeatherDescription = (renewableAvailability: {solar: number, wind: number}): string => {
-    const { solar, wind } = renewableAvailability;
-    
-    if (solar > 1.1 && wind > 1.1) return "Excellent renewable conditions";
-    if (solar > 1.1 && wind < 0.9) return "Sunny with low wind conditions";
-    if (solar < 0.9 && wind > 1.1) return "Cloudy with strong winds";
-    if (solar < 0.9 && wind < 0.9) return "Poor renewable conditions";
-    if (solar > 1.1) return "Above-average solar conditions";
-    if (wind > 1.1) return "Above-average wind conditions";
-    if (solar < 0.9) return "Below-average solar conditions";
-    if (wind < 0.9) return "Below-average wind conditions";
-    
-    return "Normal weather conditions";
   };
 
   // Get current phase based on game state
@@ -558,7 +448,7 @@ const MarketControl: React.FC = () => {
               <button
                 onClick={() => completeYearMutation.mutate(currentSession.current_year)}
                 disabled={completeYearMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2"
+                className="bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2"
               >
                 <CheckCircleIcon className="w-4 h-4" />
                 <span>Complete Year</span>
@@ -567,20 +457,11 @@ const MarketControl: React.FC = () => {
             
             <button
               onClick={() => advanceYearMutation.mutate()}
-              disabled={advanceYearMutation.isPending || currentSession.current_year >= currentSession.end_year}
-              className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 font-medium"
+              disabled={advanceYearMutation.isPending}
+              className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 font-medium"
             >
               <ForwardIcon className="w-5 h-5" />
               <span>Advance to {currentSession.current_year + 1}</span>
-            </button>
-            
-            {/* Market Parameters Button */}
-            <button
-              onClick={() => setShowParameterModal(true)}
-              className="w-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 font-medium mt-3"
-            >
-              <AdjustmentsHorizontalIcon className="w-5 h-5" />
-              <span>Configure Year Parameters</span>
             </button>
           </div>
 
@@ -690,4 +571,352 @@ const MarketControl: React.FC = () => {
           </div>
 
           <div className="bg-gray-700 rounded-lg p-3">
-            <h4 className
+            <h4 className="font-medium text-white mb-2 text-sm">Recent Events</h4>
+            {analysisData?.market_events?.length > 0 ? (
+              <div className="space-y-2">
+                {analysisData.market_events.slice(-3).map((event: any, index: number) => (
+                  <div key={index} className="text-xs">
+                    <span className="text-gray-400">Year {currentSession.current_year}:</span>
+                    <span className="text-white ml-2">{event.description}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-400 text-xs">No events triggered this session</p>
+            )}
+          </div>
+        </div>
+
+        {/* Performance Dashboard */}
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+            <ChartBarIcon className="w-5 h-5 mr-2" />
+            Market Performance
+          </h3>
+          
+          <div className="h-48 mb-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={performanceData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="year" stroke="#9CA3AF" />
+                <YAxis stroke="#9CA3AF" />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: '#1F2937', 
+                    border: '1px solid #374151',
+                    borderRadius: '8px'
+                  }}
+                />
+                <Line type="monotone" dataKey="avg_price" stroke="#3B82F6" strokeWidth={2} name="Avg Price ($/MWh)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-gray-400">Current Avg Price:</p>
+              <p className="text-white font-medium">
+                ${performanceData.length > 0 ? performanceData[performanceData.length - 1]?.avg_price?.toFixed(2) : '0'}/MWh
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-400">Renewable %:</p>
+              <p className="text-white font-medium">
+                {performanceData.length > 0 ? performanceData[performanceData.length - 1]?.renewable_pct?.toFixed(1) : '0'}%
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-400">Capacity Utilization:</p>
+              <p className="text-white font-medium">
+                {performanceData.length > 0 ? performanceData[performanceData.length - 1]?.capacity_util?.toFixed(1) : '0'}%
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-400">Total Energy:</p>
+              <p className="text-white font-medium">
+                {performanceData.length > 0 ? performanceData[performanceData.length - 1]?.total_energy?.toFixed(1) : '0'} TWh
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Market Event Modal */}
+      {showEventModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">
+                {selectedEvent ? 'Trigger Market Event' : 'Select Market Event'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowEventModal(false);
+                  setSelectedEvent(null);
+                }}
+                className="text-gray-400 hover:text-white"
+              >
+                <XCircleIcon className="w-6 h-6" />
+              </button>
+            </div>
+
+            {!selectedEvent ? (
+              <div>
+                <p className="text-gray-300 mb-4">Choose a market event to trigger:</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+                  {availableEvents.map((event) => (
+                    <button
+                      key={event.id}
+                      onClick={() => setSelectedEvent(event)}
+                      className={`p-4 rounded-lg border text-left transition-colors ${
+                        event.severity === 'high' ? 'border-red-600 hover:bg-red-900/20' :
+                        event.severity === 'medium' ? 'border-yellow-600 hover:bg-yellow-900/20' :
+                        'border-blue-600 hover:bg-blue-900/20'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2 mb-2">
+                        {event.type === 'plant_outage' ? <BoltIcon className="w-5 h-5 text-red-400" /> :
+                         event.type === 'fuel_shock' ? <FireIcon className="w-5 h-5 text-orange-400" /> :
+                         event.type === 'weather_event' ? <CloudIcon className="w-5 h-5 text-blue-400" /> :
+                         event.type === 'regulation_change' ? <CogIcon className="w-5 h-5 text-purple-400" /> :
+                         <ExclamationTriangleIcon className="w-5 h-5 text-yellow-400" />}
+                        <span className="text-white font-medium">{event.title}</span>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          event.severity === 'high' ? 'bg-red-900 text-red-300' :
+                          event.severity === 'medium' ? 'bg-yellow-900 text-yellow-300' :
+                          'bg-blue-900 text-blue-300'
+                        }`}>
+                          {event.severity.toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="text-gray-300 text-sm mb-2">{event.description}</p>
+                      <p className="text-gray-400 text-xs">{event.impact_description}</p>
+                      <p className="text-gray-500 text-xs mt-1">Duration: {event.duration_years} year(s)</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                  <div className="flex items-center space-x-3 mb-3">
+                    {selectedEvent.type === 'plant_outage' ? <BoltIcon className="w-6 h-6 text-red-400" /> :
+                     selectedEvent.type === 'fuel_shock' ? <FireIcon className="w-6 h-6 text-orange-400" /> :
+                     selectedEvent.type === 'weather_event' ? <CloudIcon className="w-6 h-6 text-blue-400" /> :
+                     selectedEvent.type === 'regulation_change' ? <CogIcon className="w-6 h-6 text-purple-400" /> :
+                     <ExclamationTriangleIcon className="w-6 h-6 text-yellow-400" />}
+                    <div>
+                      <h4 className="text-lg font-semibold text-white">{selectedEvent.title}</h4>
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        selectedEvent.severity === 'high' ? 'bg-red-900 text-red-300' :
+                        selectedEvent.severity === 'medium' ? 'bg-yellow-900 text-yellow-300' :
+                        'bg-blue-900 text-blue-300'
+                      }`}>
+                        {selectedEvent.severity.toUpperCase()} IMPACT
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <p className="text-gray-300 mb-3">{selectedEvent.description}</p>
+                  <p className="text-gray-400 text-sm mb-3">{selectedEvent.impact_description}</p>
+                  
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-400">Duration:</span>
+                      <span className="text-white ml-2">{selectedEvent.duration_years} year(s)</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Type:</span>
+                      <span className="text-white ml-2 capitalize">{selectedEvent.type.replace('_', ' ')}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Event Parameters */}
+                {selectedEvent.custom_parameters && (
+                  <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                    <h5 className="font-medium text-white mb-3">Event Parameters</h5>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {Object.entries(selectedEvent.custom_parameters).map(([key, value]) => (
+                        <div key={key} className="flex justify-between">
+                          <span className="text-gray-400 capitalize">{key.replace('_', ' ')}:</span>
+                          <span className="text-white">
+                            {typeof value === 'number' ? 
+                              (key.includes('multiplier') || key.includes('reduction') ? 
+                                `${((value as number - 1) * 100).toFixed(0)}%` :
+                                key.includes('price') ? `${value}` :
+                                value
+                              ) : 
+                              String(value)
+                            }
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Affected Utilities Selection */}
+                <div className="mb-4">
+                  <h5 className="font-medium text-white mb-3">Affected Utilities</h5>
+                  <div className="space-y-2">
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedUtilities.length === participationData.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedUtilities(participationData.map(u => u.utility));
+                          } else {
+                            setSelectedUtilities([]);
+                          }
+                        }}
+                        className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-300">All Utilities</span>
+                    </label>
+                    {participationData.map((utility) => (
+                      <label key={utility.utility} className="flex items-center space-x-2 ml-6">
+                        <input
+                          type="checkbox"
+                          checked={selectedUtilities.includes(utility.utility)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedUtilities([...selectedUtilities, utility.utility]);
+                            } else {
+                              setSelectedUtilities(selectedUtilities.filter(u => u !== utility.utility));
+                            }
+                          }}
+                          className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-300">{utility.utility}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Educational Impact */}
+                <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4 mb-4">
+                  <h5 className="font-medium text-blue-300 mb-2">Educational Impact</h5>
+                  <ul className="text-sm text-gray-300 space-y-1">
+                    {selectedEvent.type === 'plant_outage' && (
+                      <>
+                        <li>• Demonstrates importance of reserve capacity</li>
+                        <li>• Shows how supply shortages affect market prices</li>
+                        <li>• Highlights grid reliability considerations</li>
+                      </>
+                    )}
+                    {selectedEvent.type === 'fuel_shock' && (
+                      <>
+                        <li>• Illustrates fuel cost impact on plant economics</li>
+                        <li>• Shows merit order changes with cost shifts</li>
+                        <li>• Demonstrates hedging strategy importance</li>
+                      </>
+                    )}
+                    {selectedEvent.type === 'weather_event' && (
+                      <>
+                        <li>• Shows renewable energy intermittency challenges</li>
+                        <li>• Demonstrates weather impact on grid operations</li>
+                        <li>• Highlights need for backup generation</li>
+                      </>
+                    )}
+                    {selectedEvent.type === 'regulation_change' && (
+                      <>
+                        <li>• Illustrates policy impact on investment decisions</li>
+                        <li>• Shows regulatory risk in long-term planning</li>
+                        <li>• Demonstrates compliance cost considerations</li>
+                      </>
+                    )}
+                    {selectedEvent.type === 'demand_surge' && (
+                      <>
+                        <li>• Shows demand elasticity and price response</li>
+                        <li>• Illustrates peak capacity value</li>
+                        <li>• Demonstrates load forecasting challenges</li>
+                      </>
+                    )}
+                  </ul>
+                </div>
+
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => setSelectedEvent(null)}
+                    className="flex-1 bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg"
+                  >
+                    Back to Selection
+                  </button>
+                  <button
+                    onClick={() => triggerEvent(selectedEvent)}
+                    className={`flex-1 text-white px-4 py-2 rounded-lg font-medium ${
+                      selectedEvent.severity === 'high' ? 'bg-red-600 hover:bg-red-700' :
+                      selectedEvent.severity === 'medium' ? 'bg-yellow-600 hover:bg-yellow-700' :
+                      'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    Trigger Event
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Actions & Tips */}
+      <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-700 rounded-lg p-6">
+        <div className="flex items-start space-x-3">
+          <InformationCircleIcon className="w-6 h-6 text-blue-400 mt-1" />
+          <div>
+            <h3 className="text-lg font-semibold text-blue-300">Market Orchestration Guide</h3>
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <h4 className="font-medium text-white mb-3">🎮 Game Flow Management</h4>
+                <ul className="space-y-2 text-sm text-gray-300">
+                  <li>• Start each year with planning phase (5-10 min)</li>
+                  <li>• Open bidding when all utilities are ready</li>
+                  <li>• Clear markets once all bids are submitted</li>
+                  <li>• Allow time for results analysis (5-10 min)</li>
+                  <li>• Use auto-advance for experienced players</li>
+                </ul>
+              </div>
+              
+              <div>
+                <h4 className="font-medium text-white mb-3">⚡ Event Timing</h4>
+                <ul className="space-y-2 text-sm text-gray-300">
+                  <li>• Trigger events during planning phases</li>
+                  <li>• Space major events 2-3 years apart</li>
+                  <li>• Use moderate events for learning</li>
+                  <li>• Save high-impact events for advanced players</li>
+                  <li>• Explain educational value after triggering</li>
+                </ul>
+              </div>
+              
+              <div>
+                <h4 className="font-medium text-white mb-3">📊 Monitoring Tips</h4>
+                <ul className="space-y-2 text-sm text-gray-300">
+                  <li>• Watch for utilities falling behind</li>
+                  <li>• Monitor market concentration levels</li>
+                  <li>• Track renewable penetration trends</li>
+                  <li>• Observe price volatility patterns</li>
+                  <li>• Document key learning moments</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="mt-6 p-4 bg-blue-900/30 rounded-lg">
+              <h4 className="font-medium text-white mb-2">💡 Pro Tips for Instructors</h4>
+              <ul className="space-y-1 text-sm text-gray-300">
+                <li>• Use the participation monitor to ensure all students are engaged</li>
+                <li>• Trigger events to create teachable moments about market dynamics</li>
+                <li>• Allow discussion time after major market events or surprising results</li>
+                <li>• Use performance charts to facilitate comparative analysis discussions</li>
+                <li>• Save session data for post-game analysis and reflection</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MarketControl;
