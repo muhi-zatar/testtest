@@ -2,18 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CogIcon,
-  PlusIcon,
-  TrashIcon,
-  FireIcon,
-  ChartBarIcon, 
+  ChartBarIcon,
   UserGroupIcon,
   PlayIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
   BuildingOffice2Icon,
-  BoltIcon,
-  CurrencyDollarIcon,
   ClockIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
