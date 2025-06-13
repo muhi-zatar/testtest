@@ -125,6 +125,50 @@ export class ElectricityMarketAPI {
     return response.data;
   }
 
+  // Year Configuration Management
+  static async updateCarbonPrice(sessionId: string, carbonPrice: number) {
+    const response = await api.put(`/game-sessions/${sessionId}/carbon-price`, { carbon_price: carbonPrice });
+    return response.data;
+  }
+
+  static async updateDemandProfile(sessionId: string, demandProfile: {
+    off_peak_demand: number;
+    shoulder_demand: number;
+    peak_demand: number;
+    demand_growth_rate: number;
+  }) {
+    const response = await api.put(`/game-sessions/${sessionId}/demand-profile`, demandProfile);
+    return response.data;
+  }
+
+  static async updateFuelPrices(sessionId: string, year: number, fuelPrices: {
+    coal: number;
+    natural_gas: number;
+    uranium: number;
+  }) {
+    const response = await api.put(`/game-sessions/${sessionId}/fuel-prices/${year}`, { fuel_prices: fuelPrices });
+    return response.data;
+  }
+
+  static async updateRenewableAvailability(sessionId: string, year: number, availability: {
+    solar: number;
+    wind: number;
+  }) {
+    const response = await api.put(`/game-sessions/${sessionId}/renewable-availability/${year}`, {
+      solar_availability: availability.solar,
+      wind_availability: availability.wind
+    });
+    return response.data;
+  }
+
+  static async schedulePlantMaintenance(sessionId: string, plantId: string, year: number, inMaintenance: boolean) {
+    const response = await api.put(`/game-sessions/${sessionId}/plants/${plantId}/maintenance`, {
+      year,
+      in_maintenance: inMaintenance
+    });
+    return response.data;
+  }
+
   // Bidding System
   static async submitYearlyBid(sessionId: string, utilityId: string, bidData: {
     plant_id: string;
