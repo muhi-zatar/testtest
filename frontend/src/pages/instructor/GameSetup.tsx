@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   CogIcon,
   ChartBarIcon,
-  ChartBarIcon,
   UserGroupIcon,
   PlayIcon,
   CheckCircleIcon,
@@ -16,6 +15,8 @@ import {
   PlusIcon,
   TrashIcon,
   ClockIcon,
+  ClockIcon,
+  ChartBarIcon,
   FireIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
