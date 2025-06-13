@@ -4,13 +4,17 @@ import {
   CogIcon,
   UserGroupIcon,
   PlayIcon,
+  PencilIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
   BuildingOffice2Icon,
   BoltIcon,
   CurrencyDollarIcon,
-  ClockIcon
+  ClockIcon,
+  PlusIcon,
+  MinusIcon,
+  TrashIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -36,6 +40,19 @@ interface GameSetupData {
   numberOfUtilities: number;
   utilityNames: string[];
   portfolioAssignments: Record<string, string>;
+}
+
+interface CustomPlant {
+  id: string;
+  name: string;
+  plant_type: string;
+  capacity_mw: number;
+}
+
+interface CustomUtilityConfig {
+  id: string;
+  budget: number;
+  plants: CustomPlant[];
 }
 
 const GameSetup: React.FC = () => {
@@ -64,6 +81,15 @@ const GameSetup: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [createdUtilities, setCreatedUtilities] = useState<Array<{id: string, username: string}>>([]);
   const [gameSessionId, setGameSessionId] = useState<string>('');
+  const [showCustomizeModal, setShowCustomizeModal] = useState<boolean>(false);
+  const [selectedUtility, setSelectedUtility] = useState<string>('');
+  const [customConfigs, setCustomConfigs] = useState<Record<string, CustomUtilityConfig>>({});
+  const [newPlant, setNewPlant] = useState<CustomPlant>({
+    id: '',
+    name: '',
+    plant_type: 'coal',
+    capacity_mw: 100
+  });
 
   // Get portfolio templates
   const { data: portfolioTemplates, isLoading: templatesLoading } = useQuery({
@@ -90,6 +116,12 @@ const GameSetup: React.FC = () => {
     onError: () => {
       toast.error('Failed to create game session');
     }
+  });
+
+  // Get plant templates for custom configuration
+  const { data: plantTemplates } = useQuery({
+    queryKey: ['plant-templates'],
+    queryFn: ElectricityMarketAPI.getPlantTemplates,
   });
 
   // Create utilities mutation
@@ -133,6 +165,45 @@ const GameSetup: React.FC = () => {
     }
   });
 
+  // Custom portfolio assignment mutation
+  const customAssignMutation = useMutation({
+    mutationFn: async (config: CustomUtilityConfig) => {
+      if (!gameSessionId) throw new Error('No game session');
+      
+      // First update the utility's budget
+      await ElectricityMarketAPI.updateUtilityFinancials(config.id, {
+        budget: config.budget,
+        debt: 0,
+        equity: config.budget
+      });
+      
+      // Then create each plant
+      for (const plant of config.plants) {
+        const template = plantTemplates?.find(t => t.plant_type === plant.plant_type);
+        if (!template) continue;
+        
+        await ElectricityMarketAPI.createPowerPlant(gameSessionId, config.id, {
+          name: plant.name,
+          plant_type: plant.plant_type,
+          capacity_mw: plant.capacity_mw,
+          construction_start_year: 2020,
+          commissioning_year: 2023,
+          retirement_year: 2023 + template.economic_life_years
+        });
+      }
+      
+      return { success: true };
+    },
+    onSuccess: () => {
+      toast.success('Custom configuration applied successfully!');
+      setShowCustomizeModal(false);
+      queryClient.invalidateQueries({ queryKey: ['game-utilities'] });
+    },
+    onError: () => {
+      toast.error('Failed to apply custom configuration');
+    }
+  });
+
   // Start game mutation
   const startGameMutation = useMutation({
     mutationFn: () => {
@@ -164,6 +235,94 @@ const GameSetup: React.FC = () => {
       toast.error('Failed to load sample data');
     }
   });
+
+  const handleOpenCustomize = (utilityId: string) => {
+    setSelectedUtility(utilityId);
+    
+    // Initialize custom config if it doesn't exist
+    if (!customConfigs[utilityId]) {
+      const utility = createdUtilities.find(u => u.id === utilityId);
+      if (utility) {
+        setCustomConfigs({
+          ...customConfigs,
+          [utilityId]: {
+            id: utilityId,
+            budget: 2000000000, // Default $2B
+            plants: []
+          }
+        });
+      }
+    }
+    
+    setShowCustomizeModal(true);
+  };
+
+  const handleAddPlant = () => {
+    if (!selectedUtility || !newPlant.name || newPlant.capacity_mw <= 0) return;
+    
+    const config = customConfigs[selectedUtility];
+    if (!config) return;
+    
+    const plantId = `custom_plant_${Date.now()}`;
+    const updatedPlants = [...config.plants, { ...newPlant, id: plantId }];
+    
+    setCustomConfigs({
+      ...customConfigs,
+      [selectedUtility]: {
+        ...config,
+        plants: updatedPlants
+      }
+    });
+    
+    // Reset new plant form
+    setNewPlant({
+      id: '',
+      name: '',
+      plant_type: 'coal',
+      capacity_mw: 100
+    });
+  };
+
+  const handleRemovePlant = (plantId: string) => {
+    if (!selectedUtility) return;
+    
+    const config = customConfigs[selectedUtility];
+    if (!config) return;
+    
+    const updatedPlants = config.plants.filter(p => p.id !== plantId);
+    
+    setCustomConfigs({
+      ...customConfigs,
+      [selectedUtility]: {
+        ...config,
+        plants: updatedPlants
+      }
+    });
+  };
+
+  const handleUpdateBudget = (budget: number) => {
+    if (!selectedUtility) return;
+    
+    const config = customConfigs[selectedUtility];
+    if (!config) return;
+    
+    setCustomConfigs({
+      ...customConfigs,
+      [selectedUtility]: {
+        ...config,
+        budget
+      }
+    });
+  };
+
+  const handleApplyCustomConfig = () => {
+    if (!selectedUtility) return;
+    
+    const config = customConfigs[selectedUtility];
+    if (!config) return;
+    
+    customAssignMutation.mutate(config);
+  };
 
   const handleUtilityCountChange = (count: number) => {
     // Generate unique names for this session
@@ -524,7 +683,15 @@ const GameSetup: React.FC = () => {
                         <div className="flex items-center space-x-4">
                           <select
                             value={setupData.portfolioAssignments[utility.id] || ''}
-                            onChange={(e) => handlePortfolioAssignment(utility.id, e.target.value)}
+                            onChange={(e) => {
+                              // Clear custom config when selecting a template
+                              if (customConfigs[utility.id]) {
+                                const updatedConfigs = { ...customConfigs };
+                                delete updatedConfigs[utility.id];
+                                setCustomConfigs(updatedConfigs);
+                              }
+                              handlePortfolioAssignment(utility.id, e.target.value);
+                            }}
                             className="bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
                           >
                             <option value="">Select Portfolio...</option>
@@ -538,6 +705,14 @@ const GameSetup: React.FC = () => {
                           {setupData.portfolioAssignments[utility.id] && (
                             <CheckCircleIcon className="w-6 h-6 text-green-400" />
                           )}
+                          
+                          <button
+                            onClick={() => handleOpenCustomize(utility.id)}
+                            className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm flex items-center space-x-1"
+                          >
+                            <PencilIcon className="w-4 h-4" />
+                            <span>Customize</span>
+                          </button>
                         </div>
                       </div>
                       
@@ -545,6 +720,11 @@ const GameSetup: React.FC = () => {
                         <div className="mt-3 pt-3 border-t border-gray-600">
                           <p className="text-sm text-gray-400">
                             Assigned: {portfolioTemplates?.find((t: PortfolioTemplate) => t.id === setupData.portfolioAssignments[utility.id])?.name}
+                            {customConfigs[utility.id] && customConfigs[utility.id].plants.length > 0 && (
+                              <span className="ml-2 text-purple-400">
+                                (Custom: {customConfigs[utility.id].plants.length} plants)
+                              </span>
+                            )}
                           </p>
                         </div>
                       )}
@@ -573,6 +753,246 @@ const GameSetup: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Customize Utility Modal */}
+      {showCustomizeModal && selectedUtility && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-4xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-semibold text-white">
+                Customize Utility Portfolio
+              </h3>
+              <button
+                onClick={() => setShowCustomizeModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Utility Info */}
+              <div className="bg-gray-700 rounded-lg p-4">
+                <div className="flex items-center space-x-3 mb-4">
+                  <BuildingOffice2Icon className="w-8 h-8 text-purple-400" />
+                  <div>
+                    <h4 className="font-medium text-white">
+                      {createdUtilities.find(u => u.id === selectedUtility)?.username}
+                    </h4>
+                    <p className="text-sm text-gray-400">Custom Configuration</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Starting Budget ($B)
+                    </label>
+                    <div className="flex items-center">
+                      <button
+                        onClick={() => handleUpdateBudget(Math.max(0.5, (customConfigs[selectedUtility]?.budget || 2000000000) / 1e9 - 0.5) * 1e9)}
+                        className="bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded-l"
+                      >
+                        <MinusIcon className="w-4 h-4" />
+                      </button>
+                      <input
+                        type="number"
+                        value={(customConfigs[selectedUtility]?.budget || 2000000000) / 1e9}
+                        onChange={(e) => handleUpdateBudget(Number(e.target.value) * 1e9)}
+                        min="0.5"
+                        max="10"
+                        step="0.1"
+                        className="w-20 bg-gray-600 border-y border-gray-500 px-2 py-1 text-white text-center focus:outline-none"
+                      />
+                      <button
+                        onClick={() => handleUpdateBudget(Math.min(10, (customConfigs[selectedUtility]?.budget || 2000000000) / 1e9 + 0.5) * 1e9)}
+                        className="bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded-r"
+                      >
+                        <PlusIcon className="w-4 h-4" />
+                      </button>
+                      <span className="ml-2 text-gray-300">billion</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <p className="text-sm font-medium text-gray-300 mb-2">
+                      Total Capacity
+                    </p>
+                    <p className="text-xl font-bold text-white">
+                      {customConfigs[selectedUtility]?.plants.reduce((sum, p) => sum + p.capacity_mw, 0).toLocaleString() || 0} MW
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {customConfigs[selectedUtility]?.plants.length || 0} plants
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Add New Plant */}
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-4">Add New Plant</h4>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Plant Name
+                    </label>
+                    <input
+                      type="text"
+                      value={newPlant.name}
+                      onChange={(e) => setNewPlant({ ...newPlant, name: e.target.value })}
+                      className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                      placeholder="e.g., Coal Plant Alpha"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Plant Type
+                    </label>
+                    <select
+                      value={newPlant.plant_type}
+                      onChange={(e) => setNewPlant({ ...newPlant, plant_type: e.target.value })}
+                      className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    >
+                      {plantTemplates?.map((template: any) => (
+                        <option key={template.plant_type} value={template.plant_type}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Capacity (MW)
+                    </label>
+                    <input
+                      type="number"
+                      value={newPlant.capacity_mw}
+                      onChange={(e) => setNewPlant({ ...newPlant, capacity_mw: Number(e.target.value) })}
+                      min="10"
+                      max="2000"
+                      step="10"
+                      className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  
+                  <div className="flex items-end">
+                    <button
+                      onClick={handleAddPlant}
+                      disabled={!newPlant.name || newPlant.capacity_mw <= 0}
+                      className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2"
+                    >
+                      <PlusIcon className="w-4 h-4" />
+                      <span>Add Plant</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Plant List */}
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-4">Custom Plant Portfolio</h4>
+                
+                {customConfigs[selectedUtility]?.plants.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-600">
+                          <th className="text-left py-2 text-gray-400">Plant Name</th>
+                          <th className="text-left py-2 text-gray-400">Type</th>
+                          <th className="text-left py-2 text-gray-400">Capacity</th>
+                          <th className="text-left py-2 text-gray-400">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {customConfigs[selectedUtility].plants.map((plant) => {
+                          const template = plantTemplates?.find(t => t.plant_type === plant.plant_type);
+                          
+                          return (
+                            <tr key={plant.id} className="border-b border-gray-600/50">
+                              <td className="py-2 text-white">{plant.name}</td>
+                              <td className="py-2 text-gray-300">{template?.name || plant.plant_type}</td>
+                              <td className="py-2 text-blue-400">{plant.capacity_mw} MW</td>
+                              <td className="py-2">
+                                <button
+                                  onClick={() => handleRemovePlant(plant.id)}
+                                  className="bg-red-600 hover:bg-red-700 text-white p-1 rounded"
+                                >
+                                  <TrashIcon className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-400">
+                    <p>No plants added yet. Add plants above to create a custom portfolio.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Template Suggestions */}
+              <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
+                <div className="flex items-start space-x-2">
+                  <InformationCircleIcon className="w-5 h-5 text-blue-400 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-blue-300 mb-2">Template Suggestions</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                      <div>
+                        <p className="text-white font-medium">Traditional Mix</p>
+                        <ul className="text-gray-300 space-y-1 mt-1">
+                          <li>• Coal: 600 MW</li>
+                          <li>• Natural Gas CC: 400 MW</li>
+                          <li>• Natural Gas CT: 200 MW</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-white font-medium">Renewable Focus</p>
+                        <ul className="text-gray-300 space-y-1 mt-1">
+                          <li>• Solar: 500 MW</li>
+                          <li>• Wind Onshore: 400 MW</li>
+                          <li>• Natural Gas CT: 200 MW</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-white font-medium">Nuclear Baseload</p>
+                        <ul className="text-gray-300 space-y-1 mt-1">
+                          <li>• Nuclear: 1000 MW</li>
+                          <li>• Natural Gas CT: 200 MW</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowCustomizeModal(false)}
+                  className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleApplyCustomConfig}
+                  disabled={
+                    customAssignMutation.isPending || 
+                    !customConfigs[selectedUtility] || 
+                    customConfigs[selectedUtility].plants.length === 0
+                  }
+                  className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg"
+                >
+                  {customAssignMutation.isPending ? 'Applying...' : 'Apply Custom Configuration'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
