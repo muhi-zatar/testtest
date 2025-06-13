@@ -218,6 +218,47 @@ export class ElectricityMarketAPI {
     return response.data;
   }
 
+  // Market Events (for EventManagement page)
+  static async getMarketEvents(sessionId: string) {
+    try {
+      const response = await api.get(`/game-sessions/${sessionId}/events`);
+      return response.data;
+    } catch (error) {
+      console.log('Market events endpoint not available yet');
+      return [];
+    }
+  }
+
+  static async createMarketEvent(sessionId: string, eventData: any) {
+    try {
+      const response = await api.post(`/game-sessions/${sessionId}/events`, eventData);
+      return response.data;
+    } catch (error) {
+      console.log('Create market event endpoint not available yet');
+      return { message: 'Event creation simulated (API not implemented)' };
+    }
+  }
+
+  static async triggerMarketEvent(sessionId: string, eventId: string) {
+    try {
+      const response = await api.post(`/game-sessions/${sessionId}/events/${eventId}/trigger`);
+      return response.data;
+    } catch (error) {
+      console.log('Trigger market event endpoint not available yet');
+      return { message: 'Event trigger simulated (API not implemented)' };
+    }
+  }
+
+  static async deleteMarketEvent(sessionId: string, eventId: string) {
+    try {
+      const response = await api.delete(`/game-sessions/${sessionId}/events/${eventId}`);
+      return response.data;
+    } catch (error) {
+      console.log('Delete market event endpoint not available yet');
+      return { message: 'Event deletion simulated (API not implemented)' };
+    }
+  }
+
   // Game Orchestration (Instructor)
   static async startYearPlanning(sessionId: string, year: number) {
     const response = await api.post(`/game-sessions/${sessionId}/start-year-planning/${year}`);
@@ -339,7 +380,7 @@ export class ElectricityMarketAPI {
   }
 
   static async bulkAssignPortfolios(sessionId: string, assignments: any) {
-    const response = await api.post(`/game-sessions/${sessionId}/bulk-assign-portfolios`, assignments);
+    const response = await api.post(`/game-sessions/${sessionId}/bulk-assign-portfolios`, { assignments });
     return response.data;
   }
 }

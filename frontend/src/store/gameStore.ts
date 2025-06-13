@@ -209,6 +209,17 @@ export const useGameStore = create<GameStore>()(
           // Validate the rehydrated session
           if (state.currentSession) {
             console.log('🔍 Validating rehydrated session:', state.currentSession.id);
+            
+            // Clear invalid session data if it's not a valid session ID
+            if (state.currentSession.id && 
+                (state.currentSession.id === '4d605b72-896e-4f9d-8c49-98aa356d5a92' || 
+                 state.currentSession.id.length < 10)) {
+              console.warn('🔄 Invalid session detected, clearing store');
+              state.currentSession = null;
+              state.role = null;
+              state.utilityId = null;
+              localStorage.removeItem('electricity-market-game');
+            }
             // The API interceptor will handle invalid sessions
           }
         } else {
