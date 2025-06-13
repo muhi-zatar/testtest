@@ -4,6 +4,7 @@ import {
   CogIcon,
   UserGroupIcon,
   PlayIcon,
+  XMarkIcon,
   PencilIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
