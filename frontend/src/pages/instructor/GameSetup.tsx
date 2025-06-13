@@ -133,8 +133,9 @@ const GameSetup: React.FC = () => {
       toast.success('Game session created successfully!');
       setCurrentStep(2);
     },
-    onError: () => {
-      toast.error('Failed to create game session');
+    onError: (error: any) => {
+      const errorMessage = error.response?.data?.detail || 'Failed to create game session';
+      toast.error(errorMessage);
     }
   });
 

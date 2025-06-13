@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 
 // Import layouts and pages
 import RoleSelector from './components/RoleSelector';
@@ -31,6 +32,19 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       retry: 1, // Reduce retries to avoid hanging
       retryDelay: 1000,
+      onError: (error: any) => {
+        // Global error handler for queries
+        if (error.response?.status === 404 && error.config?.url?.includes('/game-sessions/')) {
+          console.error('❌ Session not found:', error.config.url);
+          // Only show toast if we're not already redirecting
+          if (!window.location.pathname.includes('/instructor/setup') && !window.location.pathname.includes('/')) {
+            toast.error('Game session not found. Redirecting to home...');
+            setTimeout(() => {
+              window.location.href = '/';
+            }, 2000);
+          }
+        }
+      }
     },
   },
 });

@@ -224,7 +224,18 @@ const MarketControl: React.FC = () => {
       toast.success('Year planning phase started');
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
-    onError: () => toast.error('Failed to start year planning')
+    onError: (error: any) => {
+      const errorMessage = error.response?.data?.detail || 'Failed to start year planning';
+      toast.error(errorMessage);
+      
+      // If session not found, redirect to role selector
+      if (error.response?.status === 404 && error.response?.data?.detail?.includes('not found')) {
+        toast.error('Session not found. Please create a new game session.');
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 2000);
+      }
+    }
   });
 
   const openBiddingMutation = useMutation({
