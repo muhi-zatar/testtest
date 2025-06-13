@@ -7,7 +7,8 @@ import {
   ChartBarIcon,
   BoltIcon,
   BuildingOfficeIcon,
-  CurrencyDollarIcon
+  CurrencyDollarIcon,
+  AdjustmentsHorizontalIcon
 } from '@heroicons/react/24/outline';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import toast from 'react-hot-toast';
@@ -170,6 +171,23 @@ const InstructorDashboard: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-white">Game Dashboard</h1>
           <p className="text-gray-400">Monitor and control the electricity market simulation</p>
+          <div className="flex items-center space-x-3">
+            <span className="text-sm text-gray-300">Progress:</span>
+            <div className="flex items-center space-x-2">
+              <div className="w-32 bg-gray-600 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${((currentSession.current_year - currentSession.start_year) / 
+                            (currentSession.end_year - currentSession.start_year)) * 100}%`
+                  }}
+                />
+              </div>
+              <span className="text-sm text-white font-medium">
+                {currentSession.current_year} / {currentSession.end_year}
+              </span>
+            </div>
+          </div>
         </div>
         
         <div className="flex space-x-3">
@@ -198,6 +216,15 @@ const InstructorDashboard: React.FC = () => {
           >
             <ForwardIcon className="w-4 h-4" />
             <span>Advance Year</span>
+          </button>
+          
+          {/* Year Configuration Button */}
+          <button
+            onClick={() => navigate('/instructor/control')}
+            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
+          >
+            <AdjustmentsHorizontalIcon className="w-5 h-5" />
+            <span>Configure Year</span>
           </button>
         </div>
       </div>
@@ -296,7 +323,7 @@ const InstructorDashboard: React.FC = () => {
           <h3 className="text-lg font-semibold text-white mb-4">Generation Capacity Mix</h3>
           <div className="h-64 flex items-center justify-center">
             {capacityMixData.length > 0 ? (
-              <ResponsiveContainer width="100%\" height="100%">
+              <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={capacityMixData}
