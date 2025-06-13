@@ -363,7 +363,18 @@ export class ElectricityMarketAPI {
     debt: number;
     equity: number;
   }) {
-    const response = await api.put(`/users/${userId}/financials`, financials);
+    try {
+      const response = await api.put(`/users/${userId}/financials`, financials);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to update utility financials:', error);
+      throw error;
+    }
+  }
+
+  // Update carbon price for a game session
+  static async updateCarbonPrice(sessionId: string, carbonPrice: number) {
+    const response = await api.put(`/game-sessions/${sessionId}/carbon-price`, { carbon_price: carbonPrice });
     return response.data;
   }
 
@@ -380,7 +391,9 @@ export class ElectricityMarketAPI {
   }
 
   static async bulkAssignPortfolios(sessionId: string, assignments: any) {
-    const response = await api.post(`/game-sessions/${sessionId}/bulk-assign-portfolios`, { assignments });
+    const response = await api.post(`/game-sessions/${sessionId}/bulk-assign-portfolios`, { 
+      assignments 
+    });
     return response.data;
   }
 }
