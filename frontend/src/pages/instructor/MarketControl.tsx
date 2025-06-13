@@ -1406,3 +1406,5 @@ const MarketControl: React.FC = () => {
 export default MarketControl;
 
 export default MarketControl
+
+export default MarketControl
