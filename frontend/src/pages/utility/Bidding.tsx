@@ -734,5 +734,3 @@ const Bidding: React.FC = () => {
 };
 
 export default Bidding;
-
-export default Bidding
