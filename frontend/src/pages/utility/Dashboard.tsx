@@ -8,7 +8,8 @@ import {
   BuildingOffice2Icon,
   CurrencyDollarIcon,
   ExclamationTriangleIcon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  CloudIcon
 } from '@heroicons/react/24/outline';
 import { ArrowTrendingUpIcon } from '@heroicons/react/24/outline';
 import { 
@@ -82,6 +83,14 @@ const UtilityDashboard: React.FC = () => {
     queryKey: ['fuel-prices', activeSession?.id, activeSession?.current_year],
     queryFn: () => currentSession ? 
       ElectricityMarketAPI.getFuelPrices(currentSession.id, currentSession.current_year) : null,
+    enabled: !!activeSession,
+  });
+  
+  // Get renewable availability for current year
+  const { data: renewableAvailability } = useQuery({
+    queryKey: ['renewable-availability', activeSession?.id, activeSession?.current_year],
+    queryFn: () => currentSession ? 
+      ElectricityMarketAPI.getRenewableAvailability(currentSession.id, currentSession.current_year) : null,
     enabled: !!activeSession,
   });
 
@@ -553,6 +562,41 @@ const UtilityDashboard: React.FC = () => {
                       <span className="text-white">${(price as number).toFixed(2)}/MMBtu</span>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+            {renewableAvailability && (
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-3 flex items-center">
+                  <CloudIcon className="w-4 h-4 mr-2" />
+                  Renewable Availability
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Solar Conditions:</span>
+                    <span className={`font-medium ${
+                      renewableAvailability.renewable_availability.solar_availability > 1.1 ? 'text-green-400' :
+                      renewableAvailability.renewable_availability.solar_availability < 0.9 ? 'text-red-400' :
+                      'text-yellow-400'
+                    }`}>
+                      {(renewableAvailability.renewable_availability.solar_availability * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Wind Conditions:</span>
+                    <span className={`font-medium ${
+                      renewableAvailability.renewable_availability.wind_availability > 1.1 ? 'text-green-400' :
+                      renewableAvailability.renewable_availability.wind_availability < 0.9 ? 'text-red-400' :
+                      'text-yellow-400'
+                    }`}>
+                      {(renewableAvailability.renewable_availability.wind_availability * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-gray-600">
+                    <p className="text-xs text-gray-300">
+                      {renewableAvailability.renewable_availability.weather_description}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
