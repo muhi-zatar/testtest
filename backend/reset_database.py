@@ -20,6 +20,13 @@ def reset_database():
         if db_file.exists():
             os.remove(db_file)
             print("🗑️  Removed existing database file")
+            
+        # Also remove any backup files that might be causing issues
+        backup_files = list(Path(__file__).parent.glob("electricity_market_yearly_backup_*.db"))
+        if backup_files:
+            for backup in backup_files:
+                os.remove(backup)
+                print(f"🗑️  Removed backup file: {backup.name}")
         
         # Import after removing the file to ensure clean creation
         from market_game_api import SessionLocal, Base, engine
