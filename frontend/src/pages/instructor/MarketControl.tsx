@@ -1410,3 +1410,5 @@ export default MarketControl
 export default MarketControl
 
 export default MarketControl
+
+export default MarketControl
