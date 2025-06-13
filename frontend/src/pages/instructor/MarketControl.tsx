@@ -689,4 +689,724 @@ const MarketControl: React.FC = () => {
           </h3>
           
           <div className="h-48 mb-4">
-            <ResponsiveContainer width
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={performanceData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="year" stroke="#9CA3AF" />
+                <YAxis stroke="#9CA3AF" />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: '#1F2937', 
+                    border: '1px solid #374151',
+                    borderRadius: '8px'
+                  }}
+                />
+                <Line type="monotone" dataKey="avg_price" stroke="#3B82F6" strokeWidth={2} name="Avg Price ($/MWh)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-gray-400">Current Avg Price:</p>
+              <p className="text-white font-medium">
+                ${performanceData.length > 0 ? performanceData[performanceData.length - 1]?.avg_price?.toFixed(2) : '0'}/MWh
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-400">Renewable %:</p>
+              <p className="text-white font-medium">
+                {performanceData.length > 0 ? performanceData[performanceData.length - 1]?.renewable_pct?.toFixed(1) : '0'}%
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-400">Capacity Utilization:</p>
+              <p className="text-white font-medium">
+                {performanceData.length > 0 ? performanceData[performanceData.length - 1]?.capacity_util?.toFixed(1) : '0'}%
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-400">Total Energy:</p>
+              <p className="text-white font-medium">
+                {performanceData.length > 0 ? performanceData[performanceData.length - 1]?.total_energy?.toFixed(1) : '0'} TWh
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Year Configuration Modal */}
+      {showYearConfigModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-4xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">
+                Configure Year {currentSession.current_year}
+              </h3>
+              <button
+                onClick={() => setShowYearConfigModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <XCircleIcon className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Carbon Price */}
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-3">Carbon Price</h4>
+                <div className="flex items-center space-x-4">
+                  <input
+                    type="range"
+                    min="0"
+                    max="200"
+                    step="5"
+                    value={yearConfig.carbonPrice}
+                    onChange={(e) => setYearConfig(prev => ({ ...prev, carbonPrice: Number(e.target.value) }))}
+                    className="flex-1"
+                  />
+                  <div className="w-24">
+                    <input
+                      type="number"
+                      value={yearConfig.carbonPrice}
+                      onChange={(e) => setYearConfig(prev => ({ ...prev, carbonPrice: Number(e.target.value) }))}
+                      min="0"
+                      max="200"
+                      step="5"
+                      className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <span className="text-gray-300">$/ton CO₂</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  Carbon price affects the marginal cost of fossil fuel plants
+                </p>
+              </div>
+
+              {/* Demand Profile */}
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-3">Demand Profile</h4>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Off-Peak Demand (MW)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="range"
+                        min="500"
+                        max="5000"
+                        step="100"
+                        value={yearConfig.offPeakDemand}
+                        onChange={(e) => setYearConfig(prev => ({ ...prev, offPeakDemand: Number(e.target.value) }))}
+                        className="flex-1"
+                      />
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          value={yearConfig.offPeakDemand}
+                          onChange={(e) => setYearConfig(prev => ({ ...prev, offPeakDemand: Number(e.target.value) }))}
+                          min="500"
+                          max="5000"
+                          step="100"
+                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <span className="text-gray-300">MW</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Shoulder Demand (MW)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="range"
+                        min="1000"
+                        max="6000"
+                        step="100"
+                        value={yearConfig.shoulderDemand}
+                        onChange={(e) => setYearConfig(prev => ({ ...prev, shoulderDemand: Number(e.target.value) }))}
+                        className="flex-1"
+                      />
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          value={yearConfig.shoulderDemand}
+                          onChange={(e) => setYearConfig(prev => ({ ...prev, shoulderDemand: Number(e.target.value) }))}
+                          min="1000"
+                          max="6000"
+                          step="100"
+                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <span className="text-gray-300">MW</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Peak Demand (MW)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="range"
+                        min="1500"
+                        max="8000"
+                        step="100"
+                        value={yearConfig.peakDemand}
+                        onChange={(e) => setYearConfig(prev => ({ ...prev, peakDemand: Number(e.target.value) }))}
+                        className="flex-1"
+                      />
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          value={yearConfig.peakDemand}
+                          onChange={(e) => setYearConfig(prev => ({ ...prev, peakDemand: Number(e.target.value) }))}
+                          min="1500"
+                          max="8000"
+                          step="100"
+                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <span className="text-gray-300">MW</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Demand Growth Rate (%)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="range"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={yearConfig.demandGrowthRate * 100}
+                        onChange={(e) => setYearConfig(prev => ({ ...prev, demandGrowthRate: Number(e.target.value) / 100 }))}
+                        className="flex-1"
+                      />
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          value={(yearConfig.demandGrowthRate * 100).toFixed(1)}
+                          onChange={(e) => setYearConfig(prev => ({ ...prev, demandGrowthRate: Number(e.target.value) / 100 }))}
+                          min="0"
+                          max="10"
+                          step="0.1"
+                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <span className="text-gray-300">%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fuel Prices */}
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-3">Fuel Prices</h4>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Coal Price ($/MMBtu)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="10"
+                        step="0.05"
+                        value={yearConfig.fuelPrices.coal}
+                        onChange={(e) => setYearConfig(prev => ({ 
+                          ...prev, 
+                          fuelPrices: { ...prev.fuelPrices, coal: Number(e.target.value) }
+                        }))}
+                        className="flex-1"
+                      />
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          value={yearConfig.fuelPrices.coal}
+                          onChange={(e) => setYearConfig(prev => ({ 
+                            ...prev, 
+                            fuelPrices: { ...prev.fuelPrices, coal: Number(e.target.value) }
+                          }))}
+                          min="0.5"
+                          max="10"
+                          step="0.05"
+                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <span className="text-gray-300">$/MMBtu</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Natural Gas Price ($/MMBtu)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="range"
+                        min="1"
+                        max="15"
+                        step="0.1"
+                        value={yearConfig.fuelPrices.natural_gas}
+                        onChange={(e) => setYearConfig(prev => ({ 
+                          ...prev, 
+                          fuelPrices: { ...prev.fuelPrices, natural_gas: Number(e.target.value) }
+                        }))}
+                        className="flex-1"
+                      />
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          value={yearConfig.fuelPrices.natural_gas}
+                          onChange={(e) => setYearConfig(prev => ({ 
+                            ...prev, 
+                            fuelPrices: { ...prev.fuelPrices, natural_gas: Number(e.target.value) }
+                          }))}
+                          min="1"
+                          max="15"
+                          step="0.1"
+                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <span className="text-gray-300">$/MMBtu</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Uranium Price ($/MMBtu)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="5"
+                        step="0.01"
+                        value={yearConfig.fuelPrices.uranium}
+                        onChange={(e) => setYearConfig(prev => ({ 
+                          ...prev, 
+                          fuelPrices: { ...prev.fuelPrices, uranium: Number(e.target.value) }
+                        }))}
+                        className="flex-1"
+                      />
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          value={yearConfig.fuelPrices.uranium}
+                          onChange={(e) => setYearConfig(prev => ({ 
+                            ...prev, 
+                            fuelPrices: { ...prev.fuelPrices, uranium: Number(e.target.value) }
+                          }))}
+                          min="0.1"
+                          max="5"
+                          step="0.01"
+                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <span className="text-gray-300">$/MMBtu</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Renewable Availability */}
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-3">Renewable Availability</h4>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Solar Availability (% of normal)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="1.5"
+                        step="0.05"
+                        value={yearConfig.renewableAvailability.solar}
+                        onChange={(e) => setYearConfig(prev => ({ 
+                          ...prev, 
+                          renewableAvailability: { 
+                            ...prev.renewableAvailability, 
+                            solar: Number(e.target.value) 
+                          }
+                        }))}
+                        className="flex-1"
+                      />
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          value={(yearConfig.renewableAvailability.solar * 100).toFixed(0)}
+                          onChange={(e) => setYearConfig(prev => ({ 
+                            ...prev, 
+                            renewableAvailability: { 
+                              ...prev.renewableAvailability, 
+                              solar: Number(e.target.value) / 100 
+                            }
+                          }))}
+                          min="50"
+                          max="150"
+                          step="5"
+                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <span className="text-gray-300">%</span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      100% = normal conditions, 50% = poor conditions, 150% = excellent conditions
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Wind Availability (% of normal)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="1.5"
+                        step="0.05"
+                        value={yearConfig.renewableAvailability.wind}
+                        onChange={(e) => setYearConfig(prev => ({ 
+                          ...prev, 
+                          renewableAvailability: { 
+                            ...prev.renewableAvailability, 
+                            wind: Number(e.target.value) 
+                          }
+                        }))}
+                        className="flex-1"
+                      />
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          value={(yearConfig.renewableAvailability.wind * 100).toFixed(0)}
+                          onChange={(e) => setYearConfig(prev => ({ 
+                            ...prev, 
+                            renewableAvailability: { 
+                              ...prev.renewableAvailability, 
+                              wind: Number(e.target.value) / 100 
+                            }
+                          }))}
+                          min="50"
+                          max="150"
+                          step="5"
+                          className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <span className="text-gray-300">%</span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      100% = normal conditions, 50% = poor conditions, 150% = excellent conditions
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Plant Maintenance */}
+              <div className="bg-gray-700 rounded-lg p-4">
+                <h4 className="font-medium text-white mb-3 flex items-center">
+                  <WrenchScrewdriverIcon className="w-5 h-5 mr-2" />
+                  Plant Maintenance
+                </h4>
+                
+                <p className="text-sm text-gray-300 mb-4">
+                  Schedule maintenance for specific plants. Plants in maintenance will be unavailable for bidding.
+                </p>
+                
+                <div className="bg-gray-600 rounded-lg p-3 text-center">
+                  <p className="text-gray-400 text-sm">
+                    Plant maintenance scheduling will be implemented in a future update.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  onClick={() => setShowYearConfigModal(false)}
+                  className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => updateYearConfigMutation.mutate(yearConfig)}
+                  disabled={updateYearConfigMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg"
+                >
+                  {updateYearConfigMutation.isPending ? 'Updating...' : 'Apply Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Market Event Modal */}
+      {showEventModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">
+                {selectedEvent ? 'Trigger Market Event' : 'Select Market Event'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowEventModal(false);
+                  setSelectedEvent(null);
+                }}
+                className="text-gray-400 hover:text-white"
+              >
+                <XCircleIcon className="w-6 h-6" />
+              </button>
+            </div>
+
+            {!selectedEvent ? (
+              <div>
+                <p className="text-gray-300 mb-4">Choose a market event to trigger:</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+                  {availableEvents.map((event) => (
+                    <button
+                      key={event.id}
+                      onClick={() => setSelectedEvent(event)}
+                      className={`p-4 rounded-lg border text-left transition-colors ${
+                        event.severity === 'high' ? 'border-red-600 hover:bg-red-900/20' :
+                        event.severity === 'medium' ? 'border-yellow-600 hover:bg-yellow-900/20' :
+                        'border-blue-600 hover:bg-blue-900/20'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2 mb-2">
+                        {event.type === 'plant_outage' ? <BoltIcon className="w-5 h-5 text-red-400" /> :
+                         event.type === 'fuel_shock' ? <FireIcon className="w-5 h-5 text-orange-400" /> :
+                         event.type === 'weather_event' ? <CloudIcon className="w-5 h-5 text-blue-400" /> :
+                         event.type === 'regulation_change' ? <CogIcon className="w-5 h-5 text-purple-400" /> :
+                         <ExclamationTriangleIcon className="w-5 h-5 text-yellow-400" />}
+                        <span className="text-white font-medium">{event.title}</span>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          event.severity === 'high' ? 'bg-red-900 text-red-300' :
+                          event.severity === 'medium' ? 'bg-yellow-900 text-yellow-300' :
+                          'bg-blue-900 text-blue-300'
+                        }`}>
+                          {event.severity.toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="text-gray-300 text-sm mb-2">{event.description}</p>
+                      <p className="text-gray-400 text-xs">{event.impact_description}</p>
+                      <p className="text-gray-500 text-xs mt-1">Duration: {event.duration_years} year(s)</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                  <div className="flex items-center space-x-3 mb-3">
+                    {selectedEvent.type === 'plant_outage' ? <BoltIcon className="w-6 h-6 text-red-400" /> :
+                     selectedEvent.type === 'fuel_shock' ? <FireIcon className="w-6 h-6 text-orange-400" /> :
+                     selectedEvent.type === 'weather_event' ? <CloudIcon className="w-6 h-6 text-blue-400" /> :
+                     selectedEvent.type === 'regulation_change' ? <CogIcon className="w-6 h-6 text-purple-400" /> :
+                     <ExclamationTriangleIcon className="w-6 h-6 text-yellow-400" />}
+                    <div>
+                      <h4 className="text-lg font-semibold text-white">{selectedEvent.title}</h4>
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        selectedEvent.severity === 'high' ? 'bg-red-900 text-red-300' :
+                        selectedEvent.severity === 'medium' ? 'bg-yellow-900 text-yellow-300' :
+                        'bg-blue-900 text-blue-300'
+                      }`}>
+                        {selectedEvent.severity.toUpperCase()} IMPACT
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <p className="text-gray-300 mb-3">{selectedEvent.description}</p>
+                  <p className="text-gray-400 text-sm mb-3">{selectedEvent.impact_description}</p>
+                  
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-400">Duration:</span>
+                      <span className="text-white ml-2">{selectedEvent.duration_years} year(s)</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Type:</span>
+                      <span className="text-white ml-2 capitalize">{selectedEvent.type.replace('_', ' ')}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Event Parameters */}
+                {selectedEvent.custom_parameters && (
+                  <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                    <h5 className="font-medium text-white mb-3">Event Parameters</h5>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {Object.entries(selectedEvent.custom_parameters).map(([key, value]) => (
+                        <div key={key} className="flex justify-between">
+                          <span className="text-gray-400 capitalize">{key.replace('_', ' ')}:</span>
+                          <span className="text-white">
+                            {typeof value === 'number' ? 
+                              (key.includes('multiplier') || key.includes('reduction') ? 
+                                `${((value as number - 1) * 100).toFixed(0)}%` :
+                                key.includes('price') ? `${value}` :
+                                value
+                              ) : 
+                              String(value)
+                            }
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Affected Utilities Selection */}
+                <div className="mb-4">
+                  <h5 className="font-medium text-white mb-3">Affected Utilities</h5>
+                  <div className="space-y-2">
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedUtilities.length === participationData.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedUtilities(participationData.map(u => u.utility_id));
+                          } else {
+                            setSelectedUtilities([]);
+                          }
+                        }}
+                        className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-300">All Utilities</span>
+                    </label>
+                    {participationData.map((utility) => (
+                      <label key={utility.utility_id} className="flex items-center space-x-2 ml-6">
+                        <input
+                          type="checkbox"
+                          checked={selectedUtilities.includes(utility.utility_id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedUtilities([...selectedUtilities, utility.utility_id]);
+                            } else {
+                              setSelectedUtilities(selectedUtilities.filter(u => u !== utility.utility_id));
+                            }
+                          }}
+                          className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-300">{utility.utility}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Educational Impact */}
+                <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3 mb-4">
+                  <div className="flex items-start space-x-2">
+                    <InformationCircleIcon className="w-5 h-5 text-blue-400 mt-0.5" />
+                    <div>
+                      <p className="text-blue-300 font-medium text-sm">Educational Impact</p>
+                      <p className="text-blue-200 text-xs">
+                        This event will demonstrate how {selectedEvent.type.replace('_', ' ')} events affect market dynamics and utility strategies.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowEventModal(false);
+                      setSelectedEvent(null);
+                    }}
+                    className="flex-1 bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => triggerEvent(selectedEvent)}
+                    className={`flex-1 text-white px-4 py-2 rounded-lg font-medium ${
+                      selectedEvent.severity === 'high' ? 'bg-red-600 hover:bg-red-700' :
+                      selectedEvent.severity === 'medium' ? 'bg-yellow-600 hover:bg-yellow-700' :
+                      'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    Trigger Event
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Actions & Tips */}
+      <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-700 rounded-lg p-6">
+        <div className="flex items-start space-x-3">
+          <InformationCircleIcon className="w-6 h-6 text-blue-400 mt-1" />
+          <div>
+            <h3 className="text-lg font-semibold text-blue-300">Market Orchestration Guide</h3>
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <h4 className="font-medium text-white mb-3">🎮 Game Flow Management</h4>
+                <ul className="space-y-2 text-sm text-gray-300">
+                  <li>• Start each year with planning phase (5-10 min)</li>
+                  <li>• Open bidding when all utilities are ready</li>
+                  <li>• Clear markets once all bids are submitted</li>
+                  <li>• Allow time for results analysis (5-10 min)</li>
+                  <li>• Use auto-advance for experienced players</li>
+                </ul>
+              </div>
+              
+              <div>
+                <h4 className="font-medium text-white mb-3">⚡ Event Timing</h4>
+                <ul className="space-y-2 text-sm text-gray-300">
+                  <li>• Trigger events during planning phases</li>
+                  <li>• Space major events 2-3 years apart</li>
+                  <li>• Use moderate events for learning</li>
+                  <li>• Save high-impact events for advanced players</li>
+                  <li>• Explain educational value after triggering</li>
+                </ul>
+              </div>
+              
+              <div>
+                <h4 className="font-medium text-white mb-3">📊 Monitoring Tips</h4>
+                <ul className="space-y-2 text-sm text-gray-300">
+                  <li>• Watch for utilities falling behind</li>
+                  <li>• Monitor market concentration levels</li>
+                  <li>• Track renewable penetration trends</li>
+                  <li>• Observe price volatility patterns</li>
+                  <li>• Document key learning moments</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="mt-6 p-4 bg-blue-900/30 rounded-lg">
+              <h4 className="font-medium text-white mb-2">💡 Pro Tips for Instructors</h4>
+              <ul className="space-y-1 text-sm text-gray-300">
+                <li>• Use the participation monitor to ensure all students are engaged</li>
+                <li>• Trigger events to create teachable moments about market dynamics</li>
+                <li>• Allow discussion time after major market events or surprising results</li>
+                <li>• Use performance charts to facilitate comparative analysis discussions</li>
+                <li>• Save session data for post-game analysis and reflection</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MarketControl;
+
+export default MarketControl
+
+export default MarketControl
+
+export default MarketControl
