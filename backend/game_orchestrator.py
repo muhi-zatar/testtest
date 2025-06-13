@@ -635,19 +635,23 @@ class YearlyGameFlowManager:
     async def _calculate_annual_utility_performance(self, year: int) -> Dict[str, Dict]:
         """Calculate performance metrics for each utility"""
         from market_game_api import DBUser, DBPowerPlant, DBYearlyBid
-        
         performance = {}
         
-        # Get all utilities in this game
-        utilities = self.db.query(DBUser).join(DBPowerPlant).filter(
-            DBPowerPlant.game_session_id == self.game_session_id
-        ).distinct().all()
+        # Get all utilities with user_type = 'utility'
+        utilities = self.db.query(DBUser).filter(
+            DBUser.user_type == 'utility'
+        ).all()
         
         for utility in utilities:
+            # Get plants for this utility in this game session
             utility_plants = self.db.query(DBPowerPlant).filter(
                 DBPowerPlant.utility_id == utility.id,
                 DBPowerPlant.game_session_id == self.game_session_id
             ).all()
+            
+            # Skip utilities with no plants in this game
+            if not utility_plants:
+                continue
             
             total_revenue = 0
             total_generation = 0
@@ -759,7 +763,45 @@ class YearlyGameFlowManager:
     
     def _calculate_final_rankings(self):
         """Calculate final utility rankings"""
-        return {"message": "Final rankings calculated based on ROI, market share, and sustainability"}
+        # Get all utilities with plants in this game
+        from market_game_api import DBUser, DBPowerPlant
+        
+        utilities_with_plants = self.db.query(DBUser).filter(
+            DBUser.id.in_(
+                self.db.query(DBPowerPlant.utility_id).filter(
+                    DBPowerPlant.game_session_id == self.game_session_id
+                ).distinct()
+            )
+        ).all()
+        
+        rankings = []
+        for utility in utilities_with_plants:
+            # Get utility plants
+            plants = self.db.query(DBPowerPlant).filter(
+                DBPowerPlant.utility_id == utility.id,
+                DBPowerPlant.game_session_id == self.game_session_id
+            ).all()
+            
+            # Calculate metrics
+            total_capacity = sum(plant.capacity_mw for plant in plants if plant.status != 'retired')
+            total_investment = sum(plant.capital_cost_total for plant in plants)
+            
+            rankings.append({
+                "utility_id": utility.id,
+                "utility_name": utility.username,
+                "budget": utility.budget,
+                "total_capacity_mw": total_capacity,
+                "total_investment": total_investment,
+                "roi": (utility.budget / total_investment) if total_investment > 0 else 0
+            })
+        
+        # Sort by ROI
+        rankings.sort(key=lambda x: x["roi"], reverse=True)
+        
+        return {
+            "message": "Final rankings calculated based on ROI, market share, and sustainability",
+            "rankings": rankings
+        }
     
     def _preview_next_year(self, next_year: int):
         """Preview upcoming year conditions"""
