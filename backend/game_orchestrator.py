@@ -46,7 +46,28 @@ class YearlyGameOrchestrator:
     
     def get_game_flow(self, game_session_id: str) -> Optional['YearlyGameFlowManager']:
         """Get existing game flow manager"""
-        return self.active_games.get(game_session_id)
+        flow_manager = self.active_games.get(game_session_id)
+        if not flow_manager:
+            # Try to create a new flow manager if session exists
+            try:
+                from market_game_api import DBGameSession
+                session = self.db.query(DBGameSession).filter(
+                    DBGameSession.id == game_session_id
+                ).first()
+                
+                if session:
+                    print(f"🔄 Creating new flow manager for existing session: {game_session_id}")
+                    flow_manager = YearlyGameFlowManager(game_session_id, self.db)
+                    self.active_games[game_session_id] = flow_manager
+                    return flow_manager
+                else:
+                    print(f"❌ Session {game_session_id} not found in database")
+                    return None
+            except Exception as e:
+                print(f"❌ Error creating flow manager: {e}")
+                return None
+        
+        return flow_manager
 
 class YearlyGameFlowManager:
     """
@@ -73,7 +94,9 @@ class YearlyGameFlowManager:
             ).first()
             
             if not session:
-                print(f"⚠️ Game session {self.game_session_id} not found")
+                print(f"❌ Game session {self.game_session_id} not found in database")
+                # Don't create the flow manager if session doesn't exist
+                raise ValueError(f"Game session {self.game_session_id} not found")
                 return
             
             # Check if session has plants
@@ -82,12 +105,13 @@ class YearlyGameFlowManager:
             ).count()
             
             if plant_count == 0:
-                print(f"⚠️ Game session {self.game_session_id} has no plants")
+                print(f"ℹ️ Game session {self.game_session_id} has no plants yet")
             else:
                 print(f"✅ Game session {self.game_session_id} verified with {plant_count} plants")
                 
         except Exception as e:
             print(f"❌ Error verifying session {self.game_session_id}: {e}")
+            raise e
 
     async def start_year_planning(self, year: int) -> Dict[str, any]:
             """

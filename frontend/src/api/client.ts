@@ -251,7 +251,17 @@ export class ElectricityMarketAPI {
         console.log('Fallback: Getting all users and filtering utilities');
         const usersResponse = await api.get('/users');
         return usersResponse.data.filter((user: any) => user.user_type === 'utility');
+      console.error('❌ API Error:', error.response?.data || error.message);
+      
+      // Handle 404 errors for game sessions specifically
+      if (error.response?.status === 404 && error.config?.url?.includes('/game-sessions/')) {
+        console.warn('🔄 Game session not found, clearing local session data');
+        // Clear invalid session from localStorage
+        localStorage.removeItem('electricity-market-game');
+        // Reload the page to reset the app state
+        window.location.reload();
       }
+      
       throw error;
     }
   }
