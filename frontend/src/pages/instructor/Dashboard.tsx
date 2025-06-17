@@ -12,6 +12,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 
 import ElectricityMarketAPI from '../../api/client';
 import { useGameStore } from '../../store/gameStore';
@@ -19,6 +20,7 @@ import { useGameStore } from '../../store/gameStore';
 const InstructorDashboard: React.FC = () => {
   const { currentSession, setCurrentSession } = useGameStore();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   
   const [selectedYear, setSelectedYear] = useState<number>(2025);
 
