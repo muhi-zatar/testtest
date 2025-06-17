@@ -6,24 +6,6 @@ import uuid
 import random
 from abc import ABC, abstractmethod
 
-@dataclass
-class RenewableAvailability:
-    """Renewable energy availability for a specific year"""
-    year: int
-    solar_availability: float  # 0.0 to 1.5 (multiplier for base capacity factor)
-    wind_availability: float   # 0.0 to 1.5 (multiplier for base capacity factor)
-    weather_description: str
-    seasonal_variations: Dict[str, float] = field(default_factory=dict)
-    
-    def get_adjusted_capacity_factor(self, plant_type: PlantType, base_cf: float) -> float:
-        """Get adjusted capacity factor based on renewable availability"""
-        if plant_type == PlantType.SOLAR:
-            return min(1.0, base_cf * self.solar_availability)
-        elif plant_type in [PlantType.WIND_ONSHORE, PlantType.WIND_OFFSHORE]:
-            return min(1.0, base_cf * self.wind_availability)
-        else:
-            return base_cf
-
 class UserType(Enum):
     OPERATOR = "operator"
     UTILITY = "utility"
@@ -59,6 +41,24 @@ class PlantStatus(Enum):
     MAINTENANCE = "maintenance"
     RETIRED = "retired"
     PLANNED = "planned"
+
+@dataclass
+class RenewableAvailability:
+    """Renewable energy availability for a specific year"""
+    year: int
+    solar_availability: float  # 0.0 to 1.5 (multiplier for base capacity factor)
+    wind_availability: float   # 0.0 to 1.5 (multiplier for base capacity factor)
+    weather_description: str
+    seasonal_variations: Dict[str, float] = field(default_factory=dict)
+    
+    def get_adjusted_capacity_factor(self, plant_type: PlantType, base_cf: float) -> float:
+        """Get adjusted capacity factor based on renewable availability"""
+        if plant_type == PlantType.SOLAR:
+            return min(1.0, base_cf * self.solar_availability)
+        elif plant_type in [PlantType.WIND_ONSHORE, PlantType.WIND_OFFSHORE]:
+            return min(1.0, base_cf * self.wind_availability)
+        else:
+            return base_cf
 
 @dataclass
 class FuelPrice:
@@ -635,7 +635,8 @@ if __name__ == "__main__":
         variable_om_per_mwh=PLANT_TEMPLATES[PlantType.COAL].variable_om_per_mwh,
         capacity_factor=PLANT_TEMPLATES[PlantType.COAL].capacity_factor_base,
         heat_rate=PLANT_TEMPLATES[PlantType.COAL].heat_rate,
-        fuel_type="coal"
+        fuel_type="coal",
+        min_generation_mw=0.0
     )
     
     print(f"\nExample Plant: {coal_plant.name}")

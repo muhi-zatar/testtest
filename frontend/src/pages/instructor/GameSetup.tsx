@@ -93,11 +93,9 @@ const GameSetup: React.FC = () => {
   });
 
   // Get portfolio templates
-  const { data: portfolioTemplates, isLoading: templatesLoading, error: templatesError } = useQuery({
+  const { data: portfolioTemplates, isLoading: templatesLoading } = useQuery({
     queryKey: ['portfolio-templates'],
     queryFn: ElectricityMarketAPI.getPortfolioTemplates,
-    retry: 3,
-    retryDelay: 1000,
   });
 
   // Get existing utilities for the current session
@@ -636,36 +634,6 @@ const GameSetup: React.FC = () => {
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-400">Loading portfolio templates...</p>
-            </div>
-          ) : templatesError ? (
-            <div className="text-center py-8">
-              <div className="bg-red-900/20 border border-red-700 rounded-lg p-4">
-                <h4 className="text-red-300 font-medium mb-2">Error Loading Templates</h4>
-                <p className="text-red-200 text-sm mb-4">
-                  Failed to load portfolio templates. This might be because the backend is not running or there's a connection issue.
-                </p>
-                <button
-                  onClick={() => queryClient.invalidateQueries({ queryKey: ['portfolio-templates'] })}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm"
-                >
-                  Retry Loading
-                </button>
-              </div>
-            </div>
-          ) : !portfolioTemplates || portfolioTemplates.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
-                <h4 className="text-yellow-300 font-medium mb-2">No Templates Available</h4>
-                <p className="text-yellow-200 text-sm mb-4">
-                  No portfolio templates are currently available. The backend may need to be restarted or the templates may not be configured.
-                </p>
-                <button
-                  onClick={() => queryClient.invalidateQueries({ queryKey: ['portfolio-templates'] })}
-                  className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded text-sm"
-                >
-                  Refresh Templates
-                </button>
-              </div>
             </div>
           ) : (
             <div className="space-y-6">
