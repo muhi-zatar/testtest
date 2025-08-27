@@ -171,6 +171,32 @@ Instructors can trigger realistic events:
 - **Regulatory Changes**: Carbon price increases
 - **Demand Surges**: Heatwaves driving higher consumption
 
+### Frontend Tests
+```bash
+cd frontend
+npm run test              # Run frontend unit tests
+npm run test:ui          # Run tests with UI
+npm run test:coverage    # Run with coverage report
+```
+
+### Backend Tests
+```bash
+# Option 1: From frontend directory
+cd frontend
+npm run test:backend     # Run backend tests
+
+# Option 2: From backend directory
+cd backend
+python -m pytest test_market_game_api.py -v
+python run_tests.py --coverage  # With coverage
+```
+
+### All Tests
+```bash
+cd frontend
+npm run test:all         # Run both frontend and backend tests
+```
+
 ## 🎓 Educational Objectives
 
 ### Primary Learning Goals

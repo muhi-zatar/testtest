@@ -11,7 +11,9 @@
         "test": "vitest",
         "test:ui": "vitest --ui",
         "test:coverage": "vitest --coverage",
-        "test:backend": "cd ../backend && python -m pytest test_market_game_api.py -v"
+        "test:backend": "cd ../backend && python -m pytest test_market_game_api.py -v",
+        "test:backend:coverage": "cd ../backend && python run_tests.py --coverage",
+        "test:all": "npm run test && npm run test:backend"
     },
     "dependencies": {
         "@headlessui/react": "^1.7.17",
