@@ -1083,9 +1083,9 @@ class TestIntegrationScenarios:
         
         # 4. Assign portfolios
         portfolio_assignments = {
-            utility_ids[0]: "balanced_traditional",
-            utility_ids[1]: "renewable_energy_leader",
-            utility_ids[2]: "natural_gas_specialist"
+            utility_ids[0]: "traditional_utility",
+            utility_ids[1]: "renewable_focused",
+            utility_ids[2]: "flexible_generation"
         }
         
         bulk_response = client.post(
@@ -1098,7 +1098,16 @@ class TestIntegrationScenarios:
         plants_response = client.get(f"/game-sessions/{session_id}/plants")
         assert plants_response.status_code == 200
         plants = plants_response.json()
-        assert len(plants) > 0
+        
+        # Check that plants were created for each utility
+        utility_plant_counts = {}
+        for plant in plants:
+            utility_id = plant["utility_id"]
+            utility_plant_counts[utility_id] = utility_plant_counts.get(utility_id, 0) + 1
+        
+        # Each utility should have at least one plant from their portfolio
+        for utility_id in utility_ids:
+            assert utility_plant_counts.get(utility_id, 0) > 0, f"Utility {utility_id} has no plants"
         
         # 6. Submit bids for each utility
         for utility_id in utility_ids:
