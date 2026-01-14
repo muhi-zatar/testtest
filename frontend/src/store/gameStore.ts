@@ -123,6 +123,13 @@ export const useGameStore = create<GameStore>()(
       setCurrentSession: (currentSession) => {
         const { currentSession: prevSession } = get();
         
+        // Validate that the session exists before setting it
+        if (!currentSession) {
+          console.warn('🔄 Attempting to set null session, clearing store');
+          set({ currentSession: null, role: null, utilityId: null });
+          return;
+        }
+        
         // Check if state changed and show notification
         if (prevSession && currentSession && prevSession.state !== currentSession.state) {
           const stateMessages: Record<string, string> = {
@@ -198,6 +205,23 @@ export const useGameStore = create<GameStore>()(
       onRehydrateStorage: () => (state) => {
         if (state) {
           console.log('🔄 Store rehydrated successfully');
+          
+          // Validate the rehydrated session
+          if (state.currentSession) {
+            console.log('🔍 Validating rehydrated session:', state.currentSession.id);
+            
+            // Clear invalid session data if it's not a valid session ID
+            if (state.currentSession.id && 
+                (state.currentSession.id === '4d605b72-896e-4f9d-8c49-98aa356d5a92' || 
+                 state.currentSession.id.length < 10)) {
+              console.warn('🔄 Invalid session detected, clearing store');
+              state.currentSession = null;
+              state.role = null;
+              state.utilityId = null;
+              localStorage.removeItem('electricity-market-game');
+            }
+            // The API interceptor will handle invalid sessions
+          }
         } else {
           console.log('🔄 Store rehydration failed or empty');
         }

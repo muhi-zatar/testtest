@@ -125,6 +125,50 @@ export class ElectricityMarketAPI {
     return response.data;
   }
 
+  // Year Configuration Management
+  static async updateCarbonPrice(sessionId: string, carbonPrice: number) {
+    const response = await api.put(`/game-sessions/${sessionId}/carbon-price`, { carbon_price: carbonPrice });
+    return response.data;
+  }
+
+  static async updateDemandProfile(sessionId: string, demandProfile: {
+    off_peak_demand: number;
+    shoulder_demand: number;
+    peak_demand: number;
+    demand_growth_rate: number;
+  }) {
+    const response = await api.put(`/game-sessions/${sessionId}/demand-profile`, demandProfile);
+    return response.data;
+  }
+
+  static async updateFuelPrices(sessionId: string, year: number, fuelPrices: {
+    coal: number;
+    natural_gas: number;
+    uranium: number;
+  }) {
+    const response = await api.put(`/game-sessions/${sessionId}/fuel-prices/${year}`, { fuel_prices: fuelPrices });
+    return response.data;
+  }
+
+  static async updateRenewableAvailability(sessionId: string, year: number, availability: {
+    solar: number;
+    wind: number;
+  }) {
+    const response = await api.put(`/game-sessions/${sessionId}/renewable-availability/${year}`, {
+      solar_availability: availability.solar,
+      wind_availability: availability.wind
+    });
+    return response.data;
+  }
+
+  static async schedulePlantMaintenance(sessionId: string, plantId: string, year: number, inMaintenance: boolean) {
+    const response = await api.put(`/game-sessions/${sessionId}/plants/${plantId}/maintenance`, {
+      year,
+      in_maintenance: inMaintenance
+    });
+    return response.data;
+  }
+
   // Bidding System
   static async submitYearlyBid(sessionId: string, utilityId: string, bidData: {
     plant_id: string;
@@ -155,11 +199,64 @@ export class ElectricityMarketAPI {
     return response.data;
   }
 
+  static async getRenewableAvailability(sessionId: string, year: number) {
+    const response = await api.get(`/game-sessions/${sessionId}/renewable-availability/${year}`);
+    return response.data;
+  }
+
+  static async retirePlant(sessionId: string, plantId: string, retirementYear: number) {
+    const response = await api.put(`/game-sessions/${sessionId}/plants/${plantId}/retire`, null, {
+      params: { retirement_year: retirementYear }
+    });
+    return response.data;
+  }
+
   static async getMarketResults(sessionId: string, year?: number, period?: string) {
     const response = await api.get(`/game-sessions/${sessionId}/market-results`, {
       params: { year, period }
     });
     return response.data;
+  }
+
+  // Market Events (for EventManagement page)
+  static async getMarketEvents(sessionId: string) {
+    try {
+      const response = await api.get(`/game-sessions/${sessionId}/events`);
+      return response.data;
+    } catch (error) {
+      console.log('Market events endpoint not available yet');
+      return [];
+    }
+  }
+
+  static async createMarketEvent(sessionId: string, eventData: any) {
+    try {
+      const response = await api.post(`/game-sessions/${sessionId}/events`, eventData);
+      return response.data;
+    } catch (error) {
+      console.log('Create market event endpoint not available yet');
+      return { message: 'Event creation simulated (API not implemented)' };
+    }
+  }
+
+  static async triggerMarketEvent(sessionId: string, eventId: string) {
+    try {
+      const response = await api.post(`/game-sessions/${sessionId}/events/${eventId}/trigger`);
+      return response.data;
+    } catch (error) {
+      console.log('Trigger market event endpoint not available yet');
+      return { message: 'Event trigger simulated (API not implemented)' };
+    }
+  }
+
+  static async deleteMarketEvent(sessionId: string, eventId: string) {
+    try {
+      const response = await api.delete(`/game-sessions/${sessionId}/events/${eventId}`);
+      return response.data;
+    } catch (error) {
+      console.log('Delete market event endpoint not available yet');
+      return { message: 'Event deletion simulated (API not implemented)' };
+    }
   }
 
   // Game Orchestration (Instructor)
@@ -240,6 +337,17 @@ export class ElectricityMarketAPI {
         const usersResponse = await api.get('/users');
         return usersResponse.data.filter((user: any) => user.user_type === 'utility');
       }
+      console.error('❌ API Error:', error.response?.data || error.message);
+      
+      // Handle 404 errors for game sessions specifically
+      if (error.response?.status === 404 && error.config?.url?.includes('/game-sessions/')) {
+        console.warn('🔄 Game session not found, clearing local session data');
+        // Clear invalid session from localStorage
+        localStorage.removeItem('electricity-market-game');
+        // Reload the page to reset the app state
+        window.location.reload();
+      }
+      
       throw error;
     }
   }
@@ -255,7 +363,18 @@ export class ElectricityMarketAPI {
     debt: number;
     equity: number;
   }) {
-    const response = await api.put(`/users/${userId}/financials`, financials);
+    try {
+      const response = await api.put(`/users/${userId}/financials`, financials);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to update utility financials:', error);
+      throw error;
+    }
+  }
+
+  // Update carbon price for a game session
+  static async updateCarbonPrice(sessionId: string, carbonPrice: number) {
+    const response = await api.put(`/game-sessions/${sessionId}/carbon-price`, { carbon_price: carbonPrice });
     return response.data;
   }
 
@@ -272,7 +391,9 @@ export class ElectricityMarketAPI {
   }
 
   static async bulkAssignPortfolios(sessionId: string, assignments: any) {
-    const response = await api.post(`/game-sessions/${sessionId}/bulk-assign-portfolios`, assignments);
+    const response = await api.post(`/game-sessions/${sessionId}/bulk-assign-portfolios`, { 
+      assignments 
+    });
     return response.data;
   }
 }

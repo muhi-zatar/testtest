@@ -96,6 +96,14 @@ const Bidding: React.FC = () => {
     enabled: !!activeSession,
   });
 
+  // Get renewable availability for current year
+  const { data: renewableAvailability } = useQuery({
+    queryKey: ['renewable-availability', activeSession?.id, activeSession?.current_year],
+    queryFn: () => currentSession ? 
+      ElectricityMarketAPI.getRenewableAvailability(currentSession.id, currentSession.current_year) : null,
+    enabled: !!activeSession,
+  });
+
   // Get plant economics for selected plant
   const { data: plantEconomics } = useQuery({
     queryKey: ['plant-economics', activeSession?.id, selectedPlant, activeSession?.current_year],
@@ -675,8 +683,9 @@ const Bidding: React.FC = () => {
                   <li>• Price competitively but above marginal cost</li>
                   <li>• Peak periods typically have higher clearing prices</li>
                   <li>• Consider your competitors' likely strategies</li>
-                  <li>• Renewable plants often bid at $0-10/MWh</li>
-                  <li>• Storage can provide grid services at premium prices</li>
+                  {renewableAvailability && renewableAvailability.impact_analysis.recommendations.map((rec: string, index: number) => (
+                    <li key={index}>• {rec}</li>
+                  ))}
                 </ul>
               </div>
             </div>
